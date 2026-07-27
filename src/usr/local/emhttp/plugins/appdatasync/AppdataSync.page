@@ -1,8 +1,6 @@
-Menu="3rd Party Plugins"
-Type="xmenu"
-Title="AppdataSync"
-Icon="fa-exchange"
-Markdown="false"
+Menu="ThirdPartyUtilities"
+Title="AppDataSync"
+Tag="fa-exchange"
 ---
 <?php
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
