@@ -11,7 +11,7 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
 
 <script src="<?= autov('/webGui/javascript/jquery.filetree.js'); ?>"></script>
 <link type="text/css" rel="stylesheet" href="<?= autov('/webGui/styles/jquery.filetree.css'); ?>">
-<link type="text/css" rel="stylesheet" href="<?= autov('/plugins/appdatasync/appdatasync.css'); ?>">
+<link type="text/css" rel="stylesheet" href="/plugins/appdatasync/appdatasync.css">
 <form id="adbForm">
 
 <table class="unraid tablesorter"><thead><tr><td><i class="fa fa-tachometer adb-section-icon"></i>Control Panel</td></tr></thead></table>
@@ -182,5 +182,30 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
 <script>
 const CSRF_TOKEN = <?= json_encode($varIni['csrf_token'] ?? ''); ?>;
 const PLUGIN_NAME = <?= json_encode($pluginName); ?>;
+function appdatasyncInitError(msg) {
+  const badge = document.getElementById('adbStatusBadge');
+  if (badge) {
+    badge.textContent = 'Error';
+    badge.className = 'adb-status-badge failed';
+  }
+  const meta = document.getElementById('adbStatusMeta');
+  if (meta) meta.textContent = msg;
+  console.error(msg);
+}
+window.addEventListener('error', function (e) {
+  if (e.target && (e.target.tagName === 'SCRIPT' || e.target.tagName === 'LINK')) {
+    appdatasyncInitError('Failed to load plugin asset: ' + (e.target.src || e.target.href));
+  }
+});
+window.onerror = function (msg) {
+  appdatasyncInitError('JavaScript error: ' + msg);
+};
+// Fallback if the external script never initializes within 8 seconds.
+setTimeout(function () {
+  const badge = document.getElementById('adbStatusBadge');
+  if (badge && badge.textContent === 'Loading…') {
+    appdatasyncInitError('Plugin script did not initialize. Check that /plugins/appdatasync/appdatasync.js is accessible.');
+  }
+}, 8000);
 </script>
-<script src="<?= autov('/plugins/appdatasync/appdatasync.js'); ?>"></script>
+<script src="/plugins/appdatasync/appdatasync.js" onerror="appdatasyncInitError('Failed to load appdatasync.js')"></script>

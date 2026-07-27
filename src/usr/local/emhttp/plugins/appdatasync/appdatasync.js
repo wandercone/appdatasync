@@ -1186,15 +1186,26 @@ async function viewHistoryLog(filename) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadConfig();
-  await loadSchedule();
-  await loadHistory();
-  await attachToRunningJob();
-  document.getElementById('scheduleFrequency').addEventListener('change', updateScheduleVisibility);
-  document.getElementById('scheduleCron').addEventListener('input', validateScheduleCron);
-  document.getElementById('scheduleEnabled').addEventListener('change', updateScheduleEnabledStyle);
-  setInterval(updateStatus, 10000);
-  $('#backupDestination').fileTreeAttach();
+  try {
+    await loadConfig();
+    await loadSchedule();
+    await loadHistory();
+    await attachToRunningJob();
+    document.getElementById('scheduleFrequency').addEventListener('change', updateScheduleVisibility);
+    document.getElementById('scheduleCron').addEventListener('input', validateScheduleCron);
+    document.getElementById('scheduleEnabled').addEventListener('change', updateScheduleEnabledStyle);
+    setInterval(updateStatus, 10000);
+    $('#backupDestination').fileTreeAttach();
+  } catch (e) {
+    const badge = document.getElementById('adbStatusBadge');
+    if (badge) {
+      badge.textContent = 'Error';
+      badge.className = 'adb-status-badge failed';
+    }
+    const meta = document.getElementById('adbStatusMeta');
+    if (meta) meta.textContent = 'Initialization failed: ' + e.message;
+    console.error(e);
+  }
 });
 
 // Pause/slow polling when tab hidden to save resources.

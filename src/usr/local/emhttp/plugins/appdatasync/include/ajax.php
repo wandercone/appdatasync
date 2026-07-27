@@ -12,12 +12,9 @@ use UnraidAppdataSync\Settings;
 
 header('Content-Type: application/json');
 
-$varIni = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
-$csrf   = is_string($_POST['csrf_token'] ?? null) ? $_POST['csrf_token'] : '';
-
-if (empty($varIni['csrf_token']) || $csrf !== $varIni['csrf_token']) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
     exit;
 }
 
