@@ -100,6 +100,99 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
+function buildMoveButtons(upHandler, downHandler) {
+  const span = document.createElement('span');
+  span.className = 'adb-move-btns';
+
+  const upBtn = document.createElement('button');
+  upBtn.type = 'button';
+  upBtn.className = 'adb-icon-btn';
+  upBtn.title = 'Move up';
+  upBtn.innerHTML = '<i class="fa fa-chevron-up"></i>';
+  upBtn.onclick = upHandler;
+  span.appendChild(upBtn);
+
+  const downBtn = document.createElement('button');
+  downBtn.type = 'button';
+  downBtn.className = 'adb-icon-btn';
+  downBtn.title = 'Move down';
+  downBtn.innerHTML = '<i class="fa fa-chevron-down"></i>';
+  downBtn.onclick = downHandler;
+  span.appendChild(downBtn);
+
+  return span;
+}
+
+function updateGroupMoveButtons() {
+  const groups = [...document.querySelectorAll('#groupsContainer fieldset')];
+  groups.forEach((fs, idx) => {
+    const btns = fs.querySelector('.adb-move-btns');
+    if (!btns) return;
+    const [upBtn, downBtn] = btns.querySelectorAll('button');
+    if (upBtn) upBtn.disabled = idx === 0;
+    if (downBtn) downBtn.disabled = idx === groups.length - 1;
+  });
+}
+
+function moveGroup(fieldset, direction) {
+  const container = document.getElementById('groupsContainer');
+  if (!container) return;
+  const groups = [...container.querySelectorAll('fieldset')];
+  const idx = groups.indexOf(fieldset);
+  if (idx === -1) return;
+  if (direction === -1 && idx === 0) return;
+  if (direction === 1 && idx === groups.length - 1) return;
+
+  const target = groups[idx + direction];
+  if (direction === -1) {
+    container.insertBefore(fieldset, target);
+  } else {
+    container.insertBefore(target, fieldset);
+  }
+  rebuildGroupsFromDom();
+  updateGroupMoveButtons();
+}
+
+function updateContainerMoveButtons(fieldset) {
+  const tbody = fieldset?.querySelector('tbody');
+  if (!tbody) return;
+  const rows = [...tbody.querySelectorAll('tr.adb-container-main-row')];
+  rows.forEach((tr, idx) => {
+    const btns = tr.querySelector('.adb-move-btns');
+    if (!btns) return;
+    const [upBtn, downBtn] = btns.querySelectorAll('button');
+    if (upBtn) upBtn.disabled = idx === 0;
+    if (downBtn) downBtn.disabled = idx === rows.length - 1;
+  });
+}
+
+function moveContainer(mainRow, direction) {
+  const sshRow = mainRow._sshRow;
+  const tbody = mainRow.closest('tbody');
+  if (!tbody) return;
+  const rows = [...tbody.querySelectorAll('tr.adb-container-main-row')];
+  const idx = rows.indexOf(mainRow);
+  if (idx === -1) return;
+  if (direction === -1 && idx === 0) return;
+  if (direction === 1 && idx === rows.length - 1) return;
+
+  const targetMain = rows[idx + direction];
+  const targetSsh = targetMain._sshRow;
+  if (direction === -1) {
+    tbody.insertBefore(mainRow, targetMain);
+    if (sshRow) tbody.insertBefore(sshRow, targetMain);
+  } else {
+    tbody.insertBefore(targetMain, mainRow);
+    if (targetSsh) tbody.insertBefore(targetSsh, mainRow);
+  }
+  rebuildGroupsFromDom();
+  const fieldset = mainRow.closest('fieldset');
+  if (fieldset) {
+    validateContainerNames(fieldset);
+    updateContainerMoveButtons(fieldset);
+  }
+}
+
 let modalOkCallback = null;
 let lastFocusedElement = null;
 
@@ -251,6 +344,7 @@ function renderConfig() {
     });
   }
   updateToggleGroupsButton();
+  updateGroupMoveButtons();
 }
 
 function getHostNames() {
@@ -438,6 +532,13 @@ function buildGroupNode(groupName, containers) {
     <input type="text" class="groupName" value="${escapeHtml(groupName)}" style="width:200px;" onchange="renameGroup(this)">
     <span class="adb-group-count">${(Array.isArray(containers) ? containers : []).length} container${(Array.isArray(containers) ? containers : []).length === 1 ? '' : 's'}</span>
   `;
+  const nameInput = legend.querySelector('.groupName');
+  if (nameInput) {
+    legend.insertBefore(buildMoveButtons(
+      () => moveGroup(fieldset, -1),
+      () => moveGroup(fieldset, 1)
+    ), nameInput);
+  }
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.innerHTML = '<i class="fa fa-trash-o"></i> Remove Group';
@@ -449,6 +550,7 @@ function buildGroupNode(groupName, containers) {
     fieldset.remove();
     rebuildGroupsFromDom();
     updateToggleGroupsButton();
+    updateGroupMoveButtons();
   };
   legend.appendChild(removeBtn);
   fieldset.appendChild(legend);
@@ -475,6 +577,7 @@ function buildGroupNode(groupName, containers) {
   const tbody = table.querySelector('tbody');
   (containers || []).forEach(container => tbody.appendChild(buildContainerRow(container)));
   body.appendChild(table);
+  updateContainerMoveButtons(fieldset);
 
   const addBtn = document.createElement('button');
   addBtn.type = 'button';
@@ -484,6 +587,7 @@ function buildGroupNode(groupName, containers) {
     tbody.appendChild(buildContainerRow({}));
     rebuildGroupsFromDom();
     validateContainerNames(fieldset);
+    updateContainerMoveButtons(fieldset);
   };
   body.appendChild(addBtn);
 
@@ -550,6 +654,14 @@ function buildContainerRow(container) {
     <td class="cActions"></td>
   `;
 
+  const nameInput = mainRow.querySelector('.cName');
+  if (nameInput) {
+    nameInput.parentNode.insertBefore(buildMoveButtons(
+      () => moveContainer(mainRow, -1),
+      () => moveContainer(mainRow, 1)
+    ), nameInput);
+  }
+
   const sshRow = document.createElement('tr');
   sshRow.className = 'adb-ssh-row';
   sshRow.dataset.name = container.name || '';
@@ -578,7 +690,10 @@ function buildContainerRow(container) {
       mainRow.remove();
       sshRow.remove();
       rebuildGroupsFromDom();
-      if (fieldset) validateContainerNames(fieldset);
+      if (fieldset) {
+        validateContainerNames(fieldset);
+        updateContainerMoveButtons(fieldset);
+      }
     };
     removeBtn.appendChild(btn);
   }
@@ -791,6 +906,7 @@ function addGroup() {
   container.appendChild(buildGroupNode(name, []));
   rebuildGroupsFromDom();
   updateToggleGroupsButton();
+  updateGroupMoveButtons();
 }
 
 function setAllGroups(expand) {

@@ -370,6 +370,33 @@
   border-color: var(--red, #ef5350);
 }
 
+/* Reorder controls */
+#adbForm .adb-move-btns {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+#adbForm .adb-move-btns .adb-icon-btn {
+  width: 24px !important;
+  height: 24px;
+  min-width: 24px;
+}
+#adbForm .adb-move-btns .adb-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+#adbForm .adb-move-btns .adb-icon-btn:not(:disabled):hover {
+  color: var(--orange, #ff9800);
+  border-color: var(--orange, #ff9800);
+}
+#adbForm legend .adb-move-btns {
+  margin-right: 4px;
+}
+#adbForm .adb-container-name .adb-move-btns {
+  margin-right: 2px;
+}
+
 /* Per-container Override column: keep the column aligned for local hosts (show a
    muted dash instead of hiding the cell, which would shift every column left). */
 #adbForm .adb-override { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
