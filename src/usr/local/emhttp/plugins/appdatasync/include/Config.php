@@ -73,7 +73,7 @@ final class Config
         $hosts = [];
         if (is_array($config['hosts'] ?? null)) {
             foreach ($config['hosts'] as $index => $host) {
-                if (!is_array($host)) {
+                if ( ! is_array($host)) {
                     return ['success' => false, 'message' => 'hosts must be a list of host definitions.'];
                 }
                 $hostName = self::string($host, 'name');
@@ -92,11 +92,11 @@ final class Config
                 }
             }
         }
-        if (!isset($hosts['local'])) {
+        if ( ! isset($hosts['local'])) {
             return ['success' => false, 'message' => 'A host named "local" is required.'];
         }
 
-        if (!is_array($config['groups'] ?? null)) {
+        if ( ! is_array($config['groups'] ?? null)) {
             return ['success' => false, 'message' => 'groups must be a mapping.'];
         }
 
@@ -105,12 +105,12 @@ final class Config
             if ($groupName === '') {
                 return ['success' => false, 'message' => 'Group names must be non-empty strings.'];
             }
-            if (!is_array($containers)) {
+            if ( ! is_array($containers)) {
                 return ['success' => false, 'message' => "Group '{$groupName}' must contain a list of containers."];
             }
 
             foreach ($containers as $container) {
-                if (!is_array($container)) {
+                if ( ! is_array($container)) {
                     return ['success' => false, 'message' => "Group '{$groupName}' contains an invalid container entry."];
                 }
                 $name = self::string($container, 'name');
@@ -121,15 +121,15 @@ final class Config
                 if ($hostName === '') {
                     return ['success' => false, 'message' => "Container '{$name}' has an empty host."];
                 }
-                if (!isset($hosts[$hostName])) {
+                if ( ! isset($hosts[$hostName])) {
                     return ['success' => false, 'message' => "Container '{$name}' references unknown host '{$hostName}'."];
                 }
-                $hostDef = $hosts[$hostName];
+                $hostDef  = $hosts[$hostName];
                 $override = self::bool($container, 'ssh_override', false);
                 if ($hostName !== 'local') {
-                    $hasHostSsh = self::string($hostDef, 'ssh_user') !== '';
+                    $hasHostSsh     = self::string($hostDef, 'ssh_user')                !== '';
                     $hasOverrideSsh = $override && self::string($container, 'ssh_user') !== '';
-                    if (!$hasHostSsh && !$hasOverrideSsh) {
+                    if ( ! $hasHostSsh && ! $hasOverrideSsh) {
                         return ['success' => false, 'message' => "Container '{$name}' on remote host '{$hostName}' requires ssh_user on the host or an override."];
                     }
                 }
@@ -204,6 +204,9 @@ final class Config
         return $default;
     }
 
+    /**
+     * @param array<mixed, mixed> $array
+     */
     public static function bool(array $array, string $key, bool $default): bool
     {
         $value = $array[$key] ?? $default;
@@ -315,7 +318,7 @@ final class Config
      */
     public static function migrateLegacyConfig(array $config): array
     {
-        if (!is_array($config['groups'] ?? null)) {
+        if ( ! is_array($config['groups'] ?? null)) {
             return $config;
         }
 
@@ -328,18 +331,18 @@ final class Config
                 }
             }
         }
-        if (!isset($hosts['local'])) {
+        if ( ! isset($hosts['local'])) {
             $hosts['local'] = ['name' => 'local'];
         }
 
         $needsMigration = false;
-        $groups = $config['groups'];
+        $groups         = $config['groups'];
         foreach ($groups as $groupName => &$containers) {
-            if (!is_array($containers)) {
+            if ( ! is_array($containers)) {
                 continue;
             }
             foreach ($containers as &$container) {
-                if (!is_array($container)) {
+                if ( ! is_array($container)) {
                     continue;
                 }
                 $hostName = self::string($container, 'host', 'local');
@@ -355,7 +358,7 @@ final class Config
                     continue;
                 }
                 $needsMigration = true;
-                $newHostName = $hostName;
+                $newHostName    = $hostName;
                 // Avoid collisions with an existing host of the same address.
                 if (isset($hosts[$newHostName])) {
                     $i = 1;
@@ -382,7 +385,7 @@ final class Config
         }
         unset($containers);
 
-        if ($needsMigration || !isset($config['hosts'])) {
+        if ($needsMigration || ! isset($config['hosts'])) {
             $config['hosts'] = array_values($hosts);
         }
 

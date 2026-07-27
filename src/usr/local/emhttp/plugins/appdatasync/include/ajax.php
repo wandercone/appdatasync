@@ -127,8 +127,8 @@ switch ($action) {
 
     case 'get_containers':
         try {
-            $host     = postStr('host', 'local');
-            $format   = escapeshellarg('{{.Names}}');
+            $host   = postStr('host', 'local');
+            $format = escapeshellarg('{{.Names}}');
 
             if ($host === '' || $host === 'local') {
                 $output = shell_exec("docker ps --format {$format} 2>/dev/null");
