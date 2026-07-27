@@ -4,7 +4,7 @@
 <PLUGIN
   name="appdatasync"
   author="wandercone"
-  version="2026.07.26_rc1"
+  version="2026.07.26_rc2"
   launch="Tools/AppdataSync"
   pluginURL="https://raw.githubusercontent.com/wandercone/appdatasync/main/plugin/appdatasync.plg"
   support="https://github.com/wandercone/appdatasync/issues"
@@ -16,6 +16,10 @@
 <CHANGES>
 <![CDATA[
 
+### 2026.07.26_rc2
+
+- chore: fix access to plugin
+
 ### 2026.07.26_rc1
 
 - chore: address lint issues
@@ -26,9 +30,9 @@ For older releases, see https://github.com/wandercone/appdatasync/releases
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.07.26_rc1-noarch-1.txz">
-<URL>https://github.com/wandercone/appdatasync/releases/download/2026.07.26_rc1/appdatasync-2026.07.26_rc1-noarch-1.txz</URL>
-<SHA256>1224c952f368bea087445620924cd5f5f7ca4bc4805157d4189322b3c92b46ef</SHA256>
+<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.07.26_rc2-noarch-1.txz">
+<URL>https://github.com/wandercone/appdatasync/releases/download/2026.07.26_rc2/appdatasync-2026.07.26_rc2-noarch-1.txz</URL>
+<SHA256>8df73da0b56911cebbc30293a344a64d6d618b595955a49c7a53113119ce8538</SHA256>
 </FILE>
 
 <FILE Name="/boot/config/plugins/appdatasync/appdatasync.cron">
@@ -44,10 +48,10 @@ The 'install' script.
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
-upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.07.26_rc1-noarch-1.txz
+upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.07.26_rc2-noarch-1.txz
 
 # cleanup old versions
-rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.07.26_rc1')
+rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.07.26_rc2')
 
 # ensure plugin config directory exists on /boot so user config survives updates
 mkdir -p /boot/config/plugins/appdatasync
@@ -77,7 +81,7 @@ fi
 echo ""
 echo "----------------------------------------------------"
 echo " appdatasync has been installed."
-echo " Version: 2026.07.26_rc1"
+echo " Version: 2026.07.26_rc2"
 echo "----------------------------------------------------"
 echo ""
 ]]>
