@@ -121,6 +121,17 @@
   display: block;
   margin-bottom: 6px;
 }
+#adbForm .adb-hooks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0 16px;
+}
+#adbForm .adb-hooks-grid dl {
+  margin-bottom: 8px;
+}
+#adbForm .adb-hooks-group .adb-hooks-grid {
+  margin-top: 6px;
+}
 #adbForm .adb-hooks-toggle {
   cursor: pointer;
   user-select: none;

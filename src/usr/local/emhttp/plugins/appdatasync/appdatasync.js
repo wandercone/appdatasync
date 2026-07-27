@@ -334,8 +334,11 @@ async function loadConfig() {
 function renderConfig() {
   document.getElementById('backupDestination').value = currentConfig.backup_destination || '';
   document.getElementById('storeByGroup').value = String(Boolean(currentConfig.store_by_group));
-  document.getElementById('globalPreRun').value = currentConfig.hooks?.pre_run || '';
-  document.getElementById('globalPostRun').value = currentConfig.hooks?.post_run || '';
+  const globalHooks = currentConfig.hooks || {};
+  document.getElementById('globalPreBackup').value  = globalHooks.pre_backup  || globalHooks.pre_run    || '';
+  document.getElementById('globalPostBackup').value = globalHooks.post_backup || globalHooks.post_run   || '';
+  document.getElementById('globalPreRestore').value  = globalHooks.pre_restore  || globalHooks.pre_run    || '';
+  document.getElementById('globalPostRestore').value = globalHooks.post_restore || globalHooks.post_run   || '';
 
   renderHosts();
 
@@ -612,9 +615,11 @@ function buildGroupNode(groupName, groupValue) {
   hooksDiv.title = "FAT32 filesystems (like /boot/config on Unraid flash) do not preserve Unix execute bits. Store hooks on a filesystem that supports permissions, or prefix the path with the interpreter (e.g., /bin/bash /boot/config/...).";
   hooksDiv.innerHTML = `
     <h4 class="adb-hooks-toggle"><i class="fa fa-chevron-right"></i> <i class="fa fa-code"></i> Group Hooks <i class="fa fa-question-circle adb-help-icon"></i></h4>
-    <div class="adb-hooks-body" style="display:none;">
-      <label>Pre-Group Script <input type="text" class="gPreGroup hookPath" value="${escapeHtml(groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
-      <label>Post-Group Script <input type="text" class="gPostGroup hookPath" value="${escapeHtml(groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+    <div class="adb-hooks-body adb-hooks-grid" style="display:none;">
+      <label>Pre-Backup Script <input type="text" class="gPreBackup hookPath" value="${escapeHtml(groupHooks.pre_backup  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+      <label>Post-Backup Script <input type="text" class="gPostBackup hookPath" value="${escapeHtml(groupHooks.post_backup || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+      <label>Pre-Restore Script <input type="text" class="gPreRestore hookPath" value="${escapeHtml(groupHooks.pre_restore  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+      <label>Post-Restore Script <input type="text" class="gPostRestore hookPath" value="${escapeHtml(groupHooks.post_restore || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
     </div>
   `;
   const hooksToggle = hooksDiv.querySelector('.adb-hooks-toggle');
@@ -880,14 +885,17 @@ function rebuildGroupsFromDom() {
       containers.push(container);
     });
 
-    const hooks = {
-      pre_group:  fs.querySelector('.gPreGroup')?.value.trim() || '',
-      post_group: fs.querySelector('.gPostGroup')?.value.trim() || '',
+    const groupHooks = {
+      pre_backup:   fs.querySelector('.gPreBackup')?.value.trim() || '',
+      post_backup:  fs.querySelector('.gPostBackup')?.value.trim() || '',
+      pre_restore:  fs.querySelector('.gPreRestore')?.value.trim() || '',
+      post_restore: fs.querySelector('.gPostRestore')?.value.trim() || '',
     };
+    const populatedGroupHooks = Object.fromEntries(Object.entries(groupHooks).filter(([, v]) => v !== ''));
 
-    if (hooks.pre_group || hooks.post_group) {
+    if (Object.keys(populatedGroupHooks).length > 0) {
       groups[groupName] = {
-        hooks: hooks,
+        hooks: populatedGroupHooks,
         containers: containers,
       };
     } else {
@@ -902,10 +910,13 @@ function rebuildGroupsFromDom() {
   });
   currentConfig.backup_destination = document.getElementById('backupDestination').value.trim();
   currentConfig.store_by_group     = document.getElementById('storeByGroup').value === 'true';
-  currentConfig.hooks = {
-    pre_run:  document.getElementById('globalPreRun').value.trim(),
-    post_run: document.getElementById('globalPostRun').value.trim(),
+  const globalHooks = {
+    pre_backup:   document.getElementById('globalPreBackup').value.trim(),
+    post_backup:  document.getElementById('globalPostBackup').value.trim(),
+    pre_restore:  document.getElementById('globalPreRestore').value.trim(),
+    post_restore: document.getElementById('globalPostRestore').value.trim(),
   };
+  currentConfig.hooks = Object.fromEntries(Object.entries(globalHooks).filter(([, v]) => v !== ''));
   currentConfig.groups             = groups;
 }
 

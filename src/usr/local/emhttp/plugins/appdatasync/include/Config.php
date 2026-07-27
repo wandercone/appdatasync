@@ -100,8 +100,13 @@ final class Config
             return ['success' => false, 'message' => 'groups must be a mapping.'];
         }
 
-        $validHookKeys = ['pre_run' => true, 'post_run' => true, 'pre_group' => true, 'post_group' => true];
-        $globalHooks   = is_array($config['hooks'] ?? null) ? $config['hooks'] : [];
+        $validHookKeys = [
+            'pre_backup'   => true,
+            'post_backup'  => true,
+            'pre_restore'  => true,
+            'post_restore' => true,
+        ];
+        $globalHooks = is_array($config['hooks'] ?? null) ? $config['hooks'] : [];
         foreach (array_keys($globalHooks) as $hookKey) {
             if ( ! isset($validHookKeys[$hookKey])) {
                 return ['success' => false, 'message' => "Unknown hook key '{$hookKey}'."];
@@ -426,6 +431,66 @@ final class Config
             $config['hosts'] = array_values($hosts);
         }
 
+        $config = self::migrateLegacyHooks($config);
+
         return $config;
+    }
+
+    /**
+     * Copy legacy generic hook keys (pre_run/post_run, pre_group/post_group) into
+     * the new operation-specific backup/restore keys when the new keys are absent.
+     *
+     * @param array<string, mixed> $config
+     * @return array<string, mixed>
+     */
+    public static function migrateLegacyHooks(array $config): array
+    {
+        $config['hooks'] = self::migrateHookSet(is_array($config['hooks'] ?? null) ? $config['hooks'] : [], 'run');
+
+        if ( ! is_array($config['groups'] ?? null)) {
+            return $config;
+        }
+
+        foreach ($config['groups'] as $groupName => &$groupValue) {
+            if ( ! is_array($groupValue)) {
+                continue;
+            }
+
+            if (isset($groupValue['containers']) && is_array($groupValue['containers'])) {
+                $groupValue['hooks'] = self::migrateHookSet(
+                    isset($groupValue['hooks']) && is_array($groupValue['hooks']) ? $groupValue['hooks'] : [],
+                    'group'
+                );
+            }
+        }
+        unset($groupValue);
+
+        return $config;
+    }
+
+    /**
+     * @param array<string, mixed> $hooks
+     * @return array<string, mixed>
+     */
+    private static function migrateHookSet(array $hooks, string $suffix): array
+    {
+        $prefixes = ['pre', 'post'];
+        foreach ($prefixes as $prefix) {
+            $legacyKey  = $prefix . '_' . $suffix;
+            $backupKey  = $prefix . '_backup';
+            $restoreKey = $prefix . '_restore';
+
+            if (isset($hooks[$legacyKey]) && is_string($hooks[$legacyKey])) {
+                if ( ! isset($hooks[$backupKey])) {
+                    $hooks[$backupKey] = $hooks[$legacyKey];
+                }
+                if ( ! isset($hooks[$restoreKey])) {
+                    $hooks[$restoreKey] = $hooks[$legacyKey];
+                }
+                unset($hooks[$legacyKey]);
+            }
+        }
+
+        return $hooks;
     }
 }

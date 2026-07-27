@@ -588,9 +588,15 @@ def main():
         }
 
         # --------------------------
-        # GLOBAL PRE-RUN HOOK
+        # GLOBAL PRE-OPERATION HOOK
         # --------------------------
-        if not run_hook(global_hooks.get('pre_run'), base_env, 'Global pre-run', dry_run=args.dry_run):
+        is_restore = args.restore
+        global_pre_key = 'pre_restore' if is_restore else 'pre_backup'
+        global_post_key = 'post_restore' if is_restore else 'post_backup'
+        global_pre_hook = global_hooks.get(global_pre_key)
+        global_post_hook = global_hooks.get(global_post_key)
+
+        if not run_hook(global_pre_hook, base_env, f'Global pre-{global_pre_key.replace("_", "-")}', dry_run=args.dry_run):
             logger.info("RESULT: failed")
             return 1
 
@@ -624,7 +630,12 @@ def main():
                     'APPDATA_BACKUP_ROOT': str(Path(config["backup_destination"]) / group_name if store_by_group else Path(config["backup_destination"])),
                 }
 
-                if not run_hook(group_hooks.get('pre_group'), group_env, f'Group {group_name} pre-group', dry_run=args.dry_run):
+                group_pre_key = 'pre_restore'
+                group_post_key = 'post_restore'
+                group_pre_hook = group_hooks.get(group_pre_key)
+                group_post_hook = group_hooks.get(group_post_key)
+
+                if not run_hook(group_pre_hook, group_env, f'Group {group_name} pre-{group_pre_key.replace("_", "-")}', dry_run=args.dry_run):
                     logger.info("RESULT: failed")
                     return 1
 
@@ -687,7 +698,7 @@ def main():
             if args.restore_container and not container_matched:
                 logger.warning(f"No container named '{args.restore_container}' found in the specified group(s).")
 
-            if not run_hook(group_hooks.get('post_group'), group_env, f'Group {group_name} post-group', dry_run=args.dry_run):
+            if not run_hook(group_post_hook, group_env, f'Group {group_name} post-{group_post_key.replace("_", "-")}', dry_run=args.dry_run):
                 logger.info("RESULT: failed")
                 return 1
 
@@ -706,7 +717,12 @@ def main():
                 'APPDATA_BACKUP_ROOT': str(Path(config["backup_destination"]) / group_name if store_by_group else Path(config["backup_destination"])),
             }
 
-            if not run_hook(group_hooks.get('pre_group'), group_env, f'Group {group_name} pre-group', dry_run=args.dry_run):
+            group_pre_key = 'pre_backup'
+            group_post_key = 'post_backup'
+            group_pre_hook = group_hooks.get(group_pre_key)
+            group_post_hook = group_hooks.get(group_post_key)
+
+            if not run_hook(group_pre_hook, group_env, f'Group {group_name} pre-{group_pre_key.replace("_", "-")}', dry_run=args.dry_run):
                 logger.info("RESULT: failed")
                 return 1
 
@@ -811,11 +827,11 @@ def main():
                         summary[(container_id, host)][2] = 'failed'
                         summary[(container_id, host)][3] = 'start failed'
 
-            if not run_hook(group_hooks.get('post_group'), group_env, f'Group {group_name} post-group', dry_run=args.dry_run):
+            if not run_hook(group_post_hook, group_env, f'Group {group_name} post-{group_post_key.replace("_", "-")}', dry_run=args.dry_run):
                 logger.info("RESULT: failed")
                 return 1
 
-        if not run_hook(global_hooks.get('post_run'), base_env, 'Global post-run', dry_run=args.dry_run):
+        if not run_hook(global_post_hook, base_env, f'Global post-{global_post_key.replace("_", "-")}', dry_run=args.dry_run):
             logger.info("RESULT: failed")
             return 1
 
