@@ -1,0 +1,396 @@
+#adbForm .adb-section { margin-bottom: 24px; }
+#adbForm .adb-section table.unraid { margin-bottom: 0; }
+#adbForm .adb-control-panel {
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  background: var(--bg-color, #fff);
+  padding: 14px 16px;
+}
+#adbForm .adb-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+#adbForm .adb-status-icon {
+  font-size: 20px;
+  line-height: 1;
+  color: var(--gray, #888);
+}
+#adbForm .adb-status-icon.idle { color: var(--green, #4caf50); }
+#adbForm .adb-status-icon.running { color: var(--orange, #ff9800); }
+#adbForm .adb-status-icon.failed { color: var(--red, #ef5350); }
+#adbForm .adb-status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: var(--gray, #888);
+}
+#adbForm .adb-status-badge.idle { background: var(--green, #4caf50); }
+#adbForm .adb-status-badge.running { background: var(--orange, #ff9800); }
+#adbForm .adb-status-badge.failed { background: var(--red, #ef5350); }
+#adbForm .adb-status-meta { color: var(--text-color, #666); font-size: 12px; }
+/* Control Panel uses a flex row layout so the action buttons sit horizontally */
+#adbForm .adb-control-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 10px 0;
+}
+#adbForm .adb-control-label {
+  flex: 0 0 120px;
+  text-align: right;
+  padding-top: 6px;
+  font-weight: bold;
+}
+#adbForm .adb-control-value {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+}
+#adbForm .adb-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#adbForm .adb-actions input[type="button"],
+#adbForm .adb-actions button {
+  display: inline-block !important;
+  width: auto !important;
+  min-width: max-content;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#adbForm .adb-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#adbForm .adb-actions .adb-sep {
+  display: inline-block;
+  width: 1px;
+  height: 20px;
+  background: var(--border-color, #ddd);
+  margin: 0 4px;
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+#adbForm .adb-log {
+  display: none;
+  margin: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  background: var(--bg-color, #fff);
+  font-family: monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+#adbForm .adb-log.has-error { color: var(--red, #ef5350); }
+#adbForm .adb-host-table-wrap,
+#adbForm .adb-container-table-wrap {
+  overflow-x: auto;
+}
+#adbForm .adb-host-table,
+#adbForm .adb-container-table {
+  table-layout: fixed;
+  width: 100%;
+}
+#adbForm .adb-host-table td,
+#adbForm .adb-container-table td,
+#adbForm .adb-host-table th,
+#adbForm .adb-container-table th {
+  vertical-align: middle;
+  padding: 6px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#adbForm .adb-host-table input,
+#adbForm .adb-host-table select,
+#adbForm .adb-container-table input,
+#adbForm .adb-container-table select {
+  width: 100%;
+  min-width: 60px;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#adbForm .adb-host-table .hName,
+#adbForm .adb-host-table .hSshUser,
+#adbForm .adb-host-table .hSshKey {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#adbForm .adb-host-table td:nth-child(1) { width: 20%; }
+#adbForm .adb-host-table td:nth-child(2) { width: 16%; }
+#adbForm .adb-host-table td:nth-child(3) { width: 46%; min-width: 140px; }
+#adbForm .adb-host-table td:nth-child(4) { width: 10%; }
+#adbForm .adb-host-table td.adb-host-actions { width: 8%; min-width: 44px; text-align: center; }
+#adbForm .adb-container-table td:nth-child(1) { width: 18%; }
+#adbForm .adb-container-table td:nth-child(2) { width: 10%; }
+#adbForm .adb-container-table td:nth-child(3) { width: 41%; min-width: 140px; }
+#adbForm .adb-container-table td:nth-child(4) { width: 7%; }
+#adbForm .adb-container-table td:nth-child(5) { width: 8%; }
+#adbForm .adb-container-table td:nth-child(6) { width: 10%; }
+#adbForm .adb-container-table td:nth-child(7) { width: 6%; min-width: 44px; text-align: center; }
+#adbForm .adb-container-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#adbForm .cPickContainer {
+  width: 28px !important;
+  min-width: 28px !important;
+  padding: 0;
+  text-align: center;
+}
+#adbForm .adb-local-row { background: rgba(127,127,127,0.08); }
+#adbForm .adb-local-row input { opacity: 0.6; }
+#adbForm .adb-ssh-row {
+  display: none;
+  background: rgba(127,127,127,0.04);
+}
+#adbForm .adb-ssh-row td {
+  padding: 8px 12px;
+  border-top: none;
+}
+#adbForm .adb-ssh-fields {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+#adbForm .adb-ssh-fields label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+#adbForm .adb-ssh-fields input {
+  width: 160px;
+  min-width: 120px;
+}
+#adbForm .adb-group {
+  margin-bottom: 12px;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  padding: 0;
+  background: var(--bg-color, #fff);
+  min-width: 0;
+  box-sizing: border-box;
+  /* Establish a BFC so the floated legend header is contained and the card
+     sizes to it cleanly, with no clipping. */
+  display: flow-root;
+}
+#adbForm .adb-group legend {
+  /* Float the legend to take it out of the UA's straddling flow (a <legend>
+     otherwise centers on the fieldset's top border, splitting its content
+     across the card and the page). Floated, it sits flush at the top of the
+     card as a full-width header bar — a strip with only a bottom hairline,
+     not a separate box. */
+  float: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+  font-weight: bold;
+  background: rgba(127,127,127,0.08);
+  border-bottom: 1px solid var(--border-color, #ccc);
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+}
+#adbForm .adb-group legend .adb-group-toggle::before {
+  content: "\f078";
+  font-family: FontAwesome;
+  display: inline-block;
+  width: 14px;
+  margin-right: 4px;
+  transition: transform 0.15s ease;
+}
+#adbForm .adb-group.collapsed legend .adb-group-toggle::before { content: "\f054"; }
+#adbForm .adb-group.collapsed .adb-group-body { display: none; }
+/* When collapsed the header's bottom hairline sits on the card's bottom border;
+   drop the hairline so only one line shows. */
+#adbForm .adb-group.collapsed legend { border-bottom-color: transparent; }
+#adbForm .adb-group-body {
+  clear: left;
+  padding: 10px;
+  overflow-x: auto;
+}
+#adbForm .adb-group-body table.unraid {
+  width: 100%;
+}
+#adbForm .adb-group-count {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--text-color, #666);
+}
+#adbForm .adb-field-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-color, #666);
+  margin-top: 2px;
+}
+#adbForm .adb-invalid { border-color: var(--red, #ef5350) !important; }
+#adbForm .adb-invalid-label { color: var(--red, #ef5350); }
+#adbForm .adb-msg { margin-left: 12px; }
+#adbForm .adb-msg:empty { display: none; }
+#adbForm .adb-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color, #ccc);
+  border-top-color: var(--orange, #ff9800);
+  border-radius: 50%;
+  animation: adb-spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+@keyframes adb-spin { to { transform: rotate(360deg); } }
+#adbModal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); }
+#adbModal .adb-modal-box {
+  position: relative;
+  top: 20%;
+  margin: 0 auto;
+  width: 440px;
+  max-width: 90%;
+  padding: 16px;
+  background: var(--bg-color, #fff);
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+#adbModal .adb-modal-title { margin-top: 0; }
+#adbModal .adb-modal-body { max-height: 320px; overflow-y: auto; }
+#adbModal .adb-modal-option {
+  display: block;
+  padding: 8px 10px;
+  margin: 4px 0;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 4px;
+  cursor: pointer;
+}
+#adbModal .adb-modal-option:hover { background: rgba(127,127,127,0.08); }
+#adbModal .adb-modal-option input { margin-right: 8px; }
+#adbModal .adb-modal-actions { margin-top: 16px; text-align: right; }
+#adbForm .adb-empty-state { padding: 10px 0; color: var(--text-color, #666); font-style: italic; }
+#adbForm .adb-schedule-enabled { border-left: 3px solid var(--green, #4caf50); padding-left: 12px; }
+#adbForm .adb-section-actions { margin-top: 10px; }
+
+/* Section header vector icons (replaces raster artwork) */
+#adbForm .adb-section-icon { margin-right: 8px; opacity: 0.9; }
+
+/* Buttons reuse Unraid's native button look; we only shape + badge them */
+#adbForm .adb-actions button,
+#adbForm .adb-section-actions button,
+#adbForm .adb-group-tools button,
+#adbForm .adb-group-body button:not(.adb-icon-btn) {
+  display: inline-flex !important;
+  align-items: center;
+  width: auto !important;
+  min-width: max-content;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#adbForm .adb-actions button i.fa,
+#adbForm .adb-section-actions button i.fa,
+#adbForm .adb-group-tools button i.fa,
+#adbForm .adb-group-body button:not(.adb-icon-btn) i.fa,
+#adbModal .adb-modal-actions button i.fa { margin-right: 6px; }
+#adbForm .adb-btn-primary { font-weight: bold; }
+#adbForm .adb-group-tools { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+#adbForm .adb-icon-btn {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 28px !important;
+  height: 28px;
+  padding: 0 !important;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+/* Row remove buttons read as destructive on hover */
+#adbForm .adb-icon-btn:hover {
+  color: var(--red, #ef5350);
+  border-color: var(--red, #ef5350);
+}
+
+/* Per-container Override column: keep the column aligned for local hosts (show a
+   muted dash instead of hiding the cell, which would shift every column left). */
+#adbForm .adb-override { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+#adbForm .adb-override-na { color: var(--text-color, #666); opacity: 0.45; }
+#adbForm .adb-override-cell .adb-override-na { display: none; }
+#adbForm .adb-override-cell.is-local .adb-override { display: none; }
+#adbForm .adb-override-cell.is-local .adb-override-na { display: inline; }
+
+/* Log console */
+#adbForm .adb-log-wrap {
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-color, #fff);
+}
+#adbForm .adb-log-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px;
+  font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-color, #666);
+  background: rgba(127,127,127,0.08);
+  border-bottom: 1px solid var(--border-color, #ccc);
+}
+#adbForm .adb-log-wrap .adb-log {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+/* Empty-state anchors */
+#adbForm .adb-empty-state i.fa { margin-right: 8px; opacity: 0.6; }
+
+/* Group legend folder icon */
+#adbForm .adb-group-icon { margin-right: 6px; opacity: 0.8; }
+
+/* History table */
+#adbForm .adb-history-table-wrap { overflow-x: auto; }
+#adbForm .adb-history-table { table-layout: fixed; width: 100%; }
+#adbForm .adb-history-table td,
+#adbForm .adb-history-table th {
+  vertical-align: middle;
+  padding: 6px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#adbForm .adb-history-table td:nth-child(1) { width: 28%; }
+#adbForm .adb-history-table td:nth-child(2) { width: 14%; }
+#adbForm .adb-history-table td:nth-child(3) { width: 38%; }
+#adbForm .adb-history-table td:nth-child(4) { width: 12%; }
+#adbForm .adb-history-table td:nth-child(5) { width: 8%; text-align: center; }
+#adbForm .adb-result-success { color: var(--green, #4caf50); font-weight: bold; }
+#adbForm .adb-result-failed  { color: var(--red, #ef5350); font-weight: bold; }
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  #adbForm .fa-spin { animation: none !important; }
+  #adbForm .adb-group legend .adb-group-toggle::before { transition: none; }
+}

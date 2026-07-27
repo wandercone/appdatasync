@@ -12,6 +12,7 @@ An Unraid plugin that backs up, restores, and syncs Docker container appdata bet
 - **Scheduled backups** via Unraid's cron system
 - **Local and remote host support** using `rsync` over SSH
 - **Live log tail** while jobs run
+- **Rotating run history** keeps the last 5 logs and results
 - **Container config export** (`docker inspect` JSON) alongside appdata
 
 ---
@@ -32,7 +33,7 @@ After installation the plugin is available at **Tools > AppdataSync**.
 - Python 3.7 or later
 - Docker Engine on target hosts
 - `rsync` and `ssh` available on local and remote systems
-- Python packages: `colorlog`, `docker`, `pyyaml`, `schema`
+- Python packages: `docker`, `pyyaml` (colorlog is optional for colored terminal output)
 
 ---
 
@@ -82,6 +83,7 @@ Enable scheduled backups from the plugin UI:
 - Optionally run scheduled backups in dry-run mode
 
 The schedule writes a plugin-owned cron file and syncs it via `/usr/local/sbin/update_cron`.
+Scheduled and manual run logs are kept under `/boot/config/plugins/appdatasync/logs/`, with the last 5 runs available in the **Recent Runs** section.
 
 ---
 

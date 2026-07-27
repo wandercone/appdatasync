@@ -1,5 +1,6 @@
 import json
 import os
+import shlex
 import subprocess
 import argparse
 import logging
@@ -10,21 +11,24 @@ try:
     import docker
     import yaml
     from docker.errors import DockerException
-    from colorlog import ColoredFormatter
-    from schema import Schema, And, Or, Use, Optional, SchemaError
 except ImportError as e:
     print(f"ERROR: missing required Python dependency: {e.name}", file=sys.stderr)
     print("Run: python3 -m pip install -r /usr/local/emhttp/plugins/appdatasync/requirements.txt", file=sys.stderr)
     sys.exit(1)
 
+try:
+    from colorlog import ColoredFormatter
+except ImportError:
+    ColoredFormatter = None
+
 from pathlib import Path
 
-DEFAULT_CONFIG_FILE = 'config.yaml'
+DEFAULT_CONFIG_FILE = '/boot/config/plugins/appdatasync/config.yaml'
 LOCK_FILE = '/tmp/unraid_appdata_backup.lock'
 
 # Setting up logging
 _handler = logging.StreamHandler()
-if sys.stderr.isatty():
+if sys.stderr.isatty() and ColoredFormatter is not None:
     _handler.setFormatter(ColoredFormatter(
         fmt='%(log_color)s[%(asctime)s] [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
@@ -49,33 +53,6 @@ logger.propagate = False
 
 _docker_clients = {}
 
-config_schema = Schema({
-    'backup_destination': And(str, len),
-    Optional('store_by_group'): Or(bool, And(str, lambda s: s.lower() in ['yes', 'no'])),
-    Optional('hosts'): [
-        {
-            'name': And(str, len),
-            Optional('ssh_user'): And(str, len),
-            Optional('ssh_key'): And(str, len),
-            Optional('ssh_port'): And(Use(int), lambda n: 0 < n < 65536),
-        }
-    ],
-    'groups': {
-        str: [
-            {
-                'name': And(str, len),
-                Optional('host'): And(str, len),
-                Optional('ssh_override'): Or(bool, And(str, lambda s: s.lower() in ['yes', 'no'])),
-                Optional('ssh_user'): And(str, len),
-                Optional('ssh_key'): And(str, len),
-                Optional('ssh_port'): And(Use(int), lambda n: 0 < n < 65536),
-                Optional('appdata_path'): str,
-                Optional('restart'): Or(bool, And(str, lambda s: s.lower() in ['yes', 'no'])),
-                Optional('start_delay'): And(Use(int), lambda n: n >= 0)
-            }
-        ]
-    }
-})
 
 def acquire_lock():
     """Write the current PID to LOCK_FILE. Returns False if another instance is already running."""
@@ -91,6 +68,7 @@ def acquire_lock():
         f.write(str(os.getpid()))
     return True
 
+
 def release_lock():
     """Remove the lock file. Called in a finally block so it always runs on exit."""
     try:
@@ -98,24 +76,36 @@ def release_lock():
     except OSError:
         pass
 
+
+def validate_config_structure(config):
+    """Perform a quick structural validation of the loaded configuration."""
+    if not isinstance(config, dict):
+        raise ValueError("Configuration must be a mapping.")
+    if not isinstance(config.get('backup_destination'), str) or not config['backup_destination']:
+        raise ValueError("backup_destination is required and must be a non-empty string.")
+    if not isinstance(config.get('groups'), dict) or not config['groups']:
+        raise ValueError("groups must be a non-empty mapping.")
+
+
 def _log_summary(summary, operation='Backup', dry_run=False):
     """Log a per-container status table and send a single Unraid notification with the overall result.
 
-    summary is a list of (container_id, host, status, detail) tuples where status is
-    'ok', 'failed', or 'skipped'. Returns 1 if any container failed, 0 otherwise.
+    summary is a dict mapping (container_id, host) to [container_id, host, status, detail].
+    Returns 1 if any container failed, 0 otherwise.
     """
-    ok      = sum(1 for _, _, s, _ in summary if s == 'ok')
-    failed  = sum(1 for _, _, s, _ in summary if s == 'failed')
-    skipped = sum(1 for _, _, s, _ in summary if s == 'skipped')
+    items   = list(summary.values())
+    ok      = sum(1 for _, _, s, _ in items if s == 'ok')
+    failed  = sum(1 for _, _, s, _ in items if s == 'failed')
+    skipped = sum(1 for _, _, s, _ in items if s == 'skipped')
 
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}{operation} summary: {ok} ok, {failed} failed, {skipped} skipped")
-    for container_id, host, status, detail in summary:
+    for container_id, host, status, detail in items:
         suffix = f" — {detail}" if detail else ""
         logger.info(f"  {container_id} on {host}: {status.upper()}{suffix}")
 
     if not dry_run:
         if failed:
-            failed_names = ', '.join(f"{c} ({h})" for c, h, s, _ in summary if s == 'failed')
+            failed_names = ', '.join(f"{c} ({h})" for c, h, s, _ in items if s == 'failed')
             msg = f"{ok} ok, {failed} failed, {skipped} skipped. Failed: {failed_names}"
             notify_host(f"{operation} complete", msg, icon="warning")
         else:
@@ -123,6 +113,7 @@ def _log_summary(summary, operation='Backup', dry_run=False):
             notify_host(f"{operation} complete", msg, icon="normal")
 
     return 1 if failed else 0
+
 
 def validate_remote_containers(config):
     """Raise ValueError if any remote container references a missing host or lacks SSH credentials."""
@@ -179,6 +170,8 @@ def resolve_host_defaults(config):
                     container["ssh_key"] = host_def["ssh_key"]
                 if "ssh_port" in host_def and "ssh_port" not in container:
                     container["ssh_port"] = host_def["ssh_port"]
+
+
 def get_docker_client(host='local'):
     """Return a cached Docker client for the given host, reconnecting if the cached client is stale."""
     if host in _docker_clients:
@@ -195,6 +188,7 @@ def get_docker_client(host='local'):
         _docker_clients[host] = client
     return _docker_clients[host]
 
+
 def set_docker_client(host='local', timeout=30):
     """Create and return a new Docker client. Uses the local socket for 'local', tcp://host:2375 otherwise."""
     try:
@@ -209,18 +203,20 @@ def set_docker_client(host='local', timeout=30):
         logger.error(f"Failed to connect to Docker on host '{host}': {e}")
         return None
 
+
 def remote_path_exists(host, ssh_user, ssh_key, ssh_port, remote_path):
     """Return True if remote_path is an existing directory on host (checked via SSH)."""
     check_cmd = ["ssh", "-o", "BatchMode=yes", "-p", str(ssh_port)]
     if ssh_key:
         check_cmd.extend(["-i", ssh_key])
     check_cmd.append(f"{ssh_user}@{host}")
-    check_cmd.append(f"test -d '{remote_path}'")
+    check_cmd.append(f"test -d {shlex.quote(str(remote_path))}")
     try:
         subprocess.run(check_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True
     except subprocess.CalledProcessError:
         return False
+
 
 def is_container_running(container_id, host, docker_client):
     """Return True if the named container is in the 'running' state."""
@@ -231,33 +227,40 @@ def is_container_running(container_id, host, docker_client):
         logger.warning(f"Container not found: {container_id}")
         return False
 
+
 def stop_container(container_id, docker_client, host, dry_run=False):
-    """Stop a running container. Sends an Unraid notification on failure."""
+    """Stop a running container. Sends an Unraid notification on failure. Returns True on success."""
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}Stopping container: {container_id} on {host}")
     if dry_run:
-        return
+        return True
     try:
         container = docker_client.containers.get(container_id)
         container.stop()
+        return True
     except Exception as e:
         sub = f"Error stopping {container_id}"
         msg = f"{e}"
         notify_host(sub, msg, icon="alert", dry_run=dry_run)
         logger.error(msg)
+        return False
+
 
 def start_container(container_id, docker_client, host, dry_run=False):
-    """Start a stopped container. Sends an Unraid notification on failure."""
+    """Start a stopped container. Sends an Unraid notification on failure. Returns True on success."""
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}Starting container: {container_id} on {host}")
     if dry_run:
-        return
+        return True
     try:
         container = docker_client.containers.get(container_id)
         container.start()
+        return True
     except Exception as e:
         sub = f"Error starting {container_id}"
         msg = f"{e}"
         notify_host(sub, msg, icon="alert", dry_run=dry_run)
         logger.error(msg)
+        return False
+
 
 def backup_container_appdata(source_path, dest_root, container_id, host, ssh_user, ssh_key=None, ssh_port=22, dry_run=False, debug=False):
     """Rsync a container's appdata directory to dest_root/container_id.
@@ -284,12 +287,12 @@ def backup_container_appdata(source_path, dest_root, container_id, host, ssh_use
     try:
         dest_path.mkdir(parents=True, exist_ok=True)
 
-        rsync_command = ["rsync", "-a", "--info=progress2", "--delete"]
+        rsync_command = ["rsync", "-a", "--info=progress2", "--delete", "-s"]
 
         if host != "local":
             ssh_command = f"/usr/bin/ssh -o Compression=no -x -p {ssh_port}"
             if ssh_key:
-                ssh_command += f" -i {ssh_key}"
+                ssh_command += f" -i {shlex.quote(ssh_key)}"
             rsync_command.extend(["-e", ssh_command])
             rsync_command.append(f"{ssh_user}@{host}:{source}/")
         else:
@@ -325,6 +328,7 @@ def backup_container_appdata(source_path, dest_root, container_id, host, ssh_use
             logger.debug(f"rsync stderr:\n{e.stderr}")
         return False
 
+
 def restore_container_appdata(backup_root, container_id, dest_path, host, ssh_user, ssh_key=None, ssh_port=22, dry_run=False, debug=False):
     """Rsync a container's appdata from backup_root/container_id back to dest_path.
 
@@ -348,15 +352,15 @@ def restore_container_appdata(backup_root, container_id, dest_path, host, ssh_us
             if ssh_key:
                 mkdir_cmd.extend(["-i", ssh_key])
             mkdir_cmd.append(f"{ssh_user}@{host}")
-            mkdir_cmd.append(f"mkdir -p '{dest_path}'")
+            mkdir_cmd.append(f"mkdir -p {shlex.quote(str(dest_path))}")
             subprocess.run(mkdir_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        rsync_command = ["rsync", "-a", "--info=progress2", "--delete"]
+        rsync_command = ["rsync", "-a", "--info=progress2", "--delete", "-s"]
 
         if host != "local":
             ssh_command = f"/usr/bin/ssh -o Compression=no -x -p {ssh_port}"
             if ssh_key:
-                ssh_command += f" -i {ssh_key}"
+                ssh_command += f" -i {shlex.quote(ssh_key)}"
             rsync_command.extend(["-e", ssh_command])
             rsync_command.append(f"{str(src_path)}/")
             rsync_command.append(f"{ssh_user}@{host}:{dest_path}/")
@@ -387,6 +391,7 @@ def restore_container_appdata(backup_root, container_id, dest_path, host, ssh_us
         notify_host("Restore error", str(e), icon="alert", dry_run=dry_run)
         return False
 
+
 def backup_container_json(container_id, backup_root, docker_client, host, dry_run=False):
     """Export a container's full config (docker inspect) to backup_root/container_id.json.
 
@@ -415,6 +420,7 @@ def backup_container_json(container_id, backup_root, docker_client, host, dry_ru
         logger.error(msg)
         return False
 
+
 def notify_host(subject, message, icon, dry_run=False):
     """Send a notification via Unraid's notify script. icon should be 'normal', 'warning', or 'alert'."""
     if dry_run:
@@ -430,6 +436,7 @@ def notify_host(subject, message, icon, dry_run=False):
         ], check=True)
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to send notification: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Unraid docker appdata backup tool")
@@ -449,6 +456,7 @@ def main():
     if not acquire_lock():
         logger.critical("Another instance of the backup script is already running. Exiting.")
         notify_host("Backup error", "Another instance is already running.", icon="alert")
+        logger.info("RESULT: failed")
         return 1
 
     try:
@@ -458,30 +466,27 @@ def main():
         except FileNotFoundError:
             notify_host("File not found Error", f"Config file '{args.config}' not found.", icon="alert", dry_run=args.dry_run)
             logger.critical(f"Config file '{args.config}' not found.")
+            logger.info("RESULT: failed")
             return 1
         except yaml.YAMLError as e:
             logger.critical(f"Failed to parse YAML config: {e}")
+            logger.info("RESULT: failed")
             return 1
 
         try:
-            config_schema.validate(config)
-            logger.info("Config schema validation successful.")
-        except SchemaError as e:
-            notify_host("Schema Error", f"Config validation error: {e}", icon="alert", dry_run=args.dry_run)
-            logger.critical(f"Config schema validation failed: {e}")
-            return 1
-
-        try:
+            validate_config_structure(config)
             validate_remote_containers(config)
             resolve_host_defaults(config)
         except ValueError as e:
             notify_host("Config Error", str(e), icon="alert", dry_run=args.dry_run)
             logger.critical(str(e))
+            logger.info("RESULT: failed")
             return 1
 
         if args.group and args.group not in config["groups"]:
             notify_host("Backup error", f"Group '{args.group}' not found in config.", icon="alert", dry_run=args.dry_run)
             logger.error(f"Group '{args.group}' not found in config.")
+            logger.info("RESULT: failed")
             return 1
 
         groups_to_process = (
@@ -489,7 +494,7 @@ def main():
         )
         store_by_group = config.get("store_by_group", False)
 
-        summary = []
+        summary = {}
 
         # --------------------------
         # RESTORE BACKUP TO GROUP / GROUP + CONTAINER
@@ -497,11 +502,13 @@ def main():
         if args.restore:
             if args.restore_container and not args.restore_group and not args.group:
                 logger.error("Must specify --restore-group or --group if using --restore-container")
+                logger.info("RESULT: failed")
                 return 1
 
             effective_restore_group = args.restore_group or args.group
             if effective_restore_group and effective_restore_group not in config["groups"]:
                 logger.error(f"Group '{effective_restore_group}' not found in config.")
+                logger.info("RESULT: failed")
                 return 1
             restore_groups = (
                 {effective_restore_group: config["groups"][effective_restore_group]}
@@ -528,7 +535,7 @@ def main():
                     client = get_docker_client(host)
                     if client is None:
                         logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
-                        summary.append((container_id, host, 'skipped', 'Docker connection failed'))
+                        summary[(container_id, host)] = [container_id, host, 'skipped', 'Docker connection failed']
                         continue
                     if args.restore_container and container_id != args.restore_container:
                         continue
@@ -537,11 +544,19 @@ def main():
                     status = 'ok'
                     detail = ''
 
-                    if is_container_running(container_id, host, client):
-                        stop_container(container_id, client, host, dry_run=args.dry_run)
-                        stopped_containers.add((container_id, host))
+                    was_running = is_container_running(container_id, host, client)
+                    stopped = False
+                    if was_running:
+                        stopped = stop_container(container_id, client, host, dry_run=args.dry_run)
 
-                    if appdata_path:
+                    if stopped:
+                        stopped_containers.add((container_id, host))
+                    elif was_running:
+                        status = 'failed'
+                        detail = 'stop failed'
+                        logger.error(f"Could not stop {container_id} on {host}; skipping restore")
+
+                    if status == 'ok' and appdata_path:
                         try:
                             if not restore_container_appdata(
                                 backup_root, container_id, appdata_path, host,
@@ -557,14 +572,18 @@ def main():
                             notify_host("Restore error", str(e), icon="alert", dry_run=args.dry_run)
 
                     if (container_id, host) in stopped_containers:
-                        start_container(container_id, client, host, dry_run=args.dry_run)
+                        if not start_container(container_id, client, host, dry_run=args.dry_run):
+                            status = 'failed'
+                            detail = 'start failed'
 
-                    summary.append((container_id, host, status, detail))
+                    summary[(container_id, host)] = [container_id, host, status, detail]
 
             if args.restore_container and not container_matched:
                 logger.warning(f"No container named '{args.restore_container}' found in the specified group(s).")
 
-            return _log_summary(summary, operation='Restore', dry_run=args.dry_run)
+            rc = _log_summary(summary, operation='Restore', dry_run=args.dry_run)
+            logger.info(f"RESULT: {'failed' if rc != 0 else 'success'}")
+            return rc
 
         # --------------------------
         # PERFORM A BACKUP IF --restore IS NOT PASSED
@@ -578,6 +597,7 @@ def main():
 
             logger.info(f"{'- DRY RUN -  ' if args.dry_run else ''}Processing group: {group_name}")
             containers_to_restart = []
+            stop_failed = set()
 
             # Step 1: Stop containers marked for restart
             for container in containers:
@@ -586,13 +606,17 @@ def main():
                 client = get_docker_client(host)
                 if client is None:
                     logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
+                    stop_failed.add(container_id)
                     continue
                 restart_value = container.get("restart", False)
                 should_restart = str(restart_value).lower() == "yes" if isinstance(restart_value, str) else bool(restart_value)
 
                 if should_restart and is_container_running(container_id, host, client):
-                    containers_to_restart.append(container_id)
-                    stop_container(container_id, client, host, dry_run=args.dry_run)
+                    if stop_container(container_id, client, host, dry_run=args.dry_run):
+                        containers_to_restart.append(container_id)
+                    else:
+                        logger.error(f"Could not stop {container_id} on {host}; it will be skipped")
+                        stop_failed.add(container_id)
                 elif should_restart:
                     logger.info(f"{'- DRY RUN -  ' if args.dry_run else ''}{container_id} was not running on {host}, skipping stop.")
                 else:
@@ -608,7 +632,11 @@ def main():
                 client = get_docker_client(host)
                 if client is None:
                     logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
-                    summary.append((container_id, host, 'skipped', 'Docker connection failed'))
+                    summary[(container_id, host)] = [container_id, host, 'skipped', 'Docker connection failed']
+                    continue
+
+                if container_id in stop_failed:
+                    summary[(container_id, host)] = [container_id, host, 'failed', 'stop failed']
                     continue
 
                 status = 'ok'
@@ -621,7 +649,7 @@ def main():
 
                 if not source_path:
                     logger.info(f"{'- DRY RUN -  ' if args.dry_run else ''}Skipping data backup for {container_id} (no path).")
-                    summary.append((container_id, host, status, detail or 'no appdata_path'))
+                    summary[(container_id, host)] = [container_id, host, status, detail or 'no appdata_path']
                     continue
 
                 try:
@@ -639,7 +667,7 @@ def main():
                     status = 'failed'
                     detail = str(e)
 
-                summary.append((container_id, host, status, detail))
+                summary[(container_id, host)] = [container_id, host, status, detail]
 
             # Step 3: Start previously stopped containers
             for container_id in reversed(containers_to_restart):
@@ -648,18 +676,27 @@ def main():
                 restart_client = get_docker_client(host)
                 if restart_client is None:
                     logger.error(f"Skipping restart of container {container_id} due to Docker connection issue on {host}")
+                    if (container_id, host) in summary:
+                        summary[(container_id, host)][2] = 'failed'
+                        summary[(container_id, host)][3] = 'restart connection failed'
                     continue
                 delay = container_cfg.get("start_delay", 0)
                 if delay > 0:
                     logger.info(f"Waiting {delay} seconds before starting {container_id} on {host}")
                     if not args.dry_run:
                         time.sleep(delay)
-                start_container(container_id, restart_client, host, dry_run=args.dry_run)
+                if not start_container(container_id, restart_client, host, dry_run=args.dry_run):
+                    if (container_id, host) in summary:
+                        summary[(container_id, host)][2] = 'failed'
+                        summary[(container_id, host)][3] = 'start failed'
 
-        return _log_summary(summary, operation='Backup', dry_run=args.dry_run)
+        rc = _log_summary(summary, operation='Backup', dry_run=args.dry_run)
+        logger.info(f"RESULT: {'failed' if rc != 0 else 'success'}")
+        return rc
 
     finally:
         release_lock()
+
 
 if __name__ == '__main__':
     sys.exit(main())

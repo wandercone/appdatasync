@@ -4,17 +4,11 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Settings.php';
+require_once __DIR__ . '/LogManager.php';
 
 use UnraidAppdataSync\Config;
+use UnraidAppdataSync\LogManager;
 use UnraidAppdataSync\Settings;
-
-const LOG_FILE = '/tmp/appdatasync-cron.log';
-
-function logMessage(string $message): void
-{
-    $line = '[' . date('Y-m-d H:i:s') . '] ' . trim($message) . "\n";
-    file_put_contents(LOG_FILE, $line, FILE_APPEND | LOCK_EX);
-}
 
 if (PHP_SAPI !== 'cli') {
     http_response_code(403);
@@ -50,7 +44,10 @@ if ($command !== 'backup') {
 
 $settings = Settings::load();
 if ( ! ($settings['schedule_enabled'] ?? false)) {
-    logMessage('Scheduled backups are disabled; exiting.');
+    LogManager::ensureDir();
+    $logFile = LogManager::generatePath('backup');
+    file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] Scheduled backups are disabled; exiting.\n");
+    LogManager::finalizeRun($logFile, 'Backup', Settings::scheduleGroups($settings), false, date('c'));
     exit(0);
 }
 
@@ -59,13 +56,20 @@ if (is_executable('/usr/bin/python3')) {
     $python = '/usr/bin/python3';
 }
 
-$args = '';
+$args           = '';
+$scheduleGroups = Settings::scheduleGroups($settings);
 if ($groups !== null && $groups !== '') {
     $args .= ' --group ' . escapeshellarg($groups);
+} elseif ($scheduleGroups !== []) {
+    $args .= ' --group ' . escapeshellarg(implode(',', $scheduleGroups));
 }
 if ($dryRun) {
     $args .= ' --dry-run';
 }
+
+$logFile = LogManager::generatePath('backup');
+LogManager::setCurrentLog($logFile);
+$startedAt = date('c');
 
 $env = 'APPDATA_BACKUP_CONFIG=' . escapeshellarg(Config::configPath()) . ' ';
 $cmd = sprintf(
@@ -74,10 +78,19 @@ $cmd = sprintf(
     escapeshellarg($python),
     escapeshellarg('/usr/local/emhttp/plugins/appdatasync/backup.py'),
     $args,
-    escapeshellarg(LOG_FILE)
+    escapeshellarg($logFile)
 );
 
-logMessage('Starting scheduled backup: ' . $cmd);
+function logToFile(string $path, string $message): void
+{
+    $line = '[' . date('Y-m-d H:i:s') . '] ' . trim($message) . "\n";
+    file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+}
+
+logToFile($logFile, 'Starting scheduled backup: ' . $cmd);
 exec($cmd, $output, $rc);
-logMessage('Scheduled backup finished with exit code ' . $rc);
+logToFile($logFile, 'Scheduled backup finished with exit code ' . $rc);
+
+$operationGroups = $groups !== null && $groups !== '' ? explode(',', $groups) : $scheduleGroups;
+LogManager::finalizeRun($logFile, 'Backup', $operationGroups, $dryRun, $startedAt);
 exit($rc);

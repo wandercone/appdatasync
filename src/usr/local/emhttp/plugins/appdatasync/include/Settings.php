@@ -64,7 +64,7 @@ final class Settings
             throw new \RuntimeException('Failed to write settings.');
         }
         rename($tmp, $cfgFile);
-        chmod($cfgFile, 0o644);
+        chmod($cfgFile, 0644);
 
         self::writeCronFile($merged);
     }
@@ -205,7 +205,7 @@ final class Settings
     {
         $dir = self::configDir();
         if ( ! is_dir($dir)) {
-            @mkdir($dir, 0o755, true);
+            @mkdir($dir, 0755, true);
         }
     }
 
@@ -248,14 +248,14 @@ final class Settings
 
         $lines = ['# Generated appdatasync plugin scheduled tasks'];
         if ($enabled) {
-            $lines[] = "{$cron} {$php} {$script} {$args} >/tmp/appdatasync-cron.log 2>&1";
+            $lines[] = "{$cron} {$php} {$script} {$args}";
         }
 
         $cronFile = self::cronPath();
         $tmp      = $cronFile . '.tmp';
         file_put_contents($tmp, implode("\n", $lines) . "\n\n");
         rename($tmp, $cronFile);
-        chmod($cronFile, 0o644);
+        chmod($cronFile, 0644);
 
         @exec('/usr/local/sbin/update_cron >/dev/null 2>&1');
     }

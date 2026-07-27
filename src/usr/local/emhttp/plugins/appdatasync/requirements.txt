@@ -1,4 +1,2 @@
-colorlog
 docker
 pyyaml
-schema

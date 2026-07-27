@@ -53,7 +53,7 @@ final class Config
         }
 
         rename($tmp, $path);
-        chmod($path, 0o644);
+        chmod($path, 0644);
         self::$cache = $config;
     }
 
@@ -175,7 +175,7 @@ final class Config
     {
         $dir = self::configDir();
         if ( ! is_dir($dir)) {
-            @mkdir($dir, 0o755, true);
+            @mkdir($dir, 0755, true);
         }
     }
 

@@ -2,25 +2,27 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/Config.php';
+require_once __DIR__ . '/Settings.php';
+require_once __DIR__ . '/LogManager.php';
+
+use UnraidAppdataSync\Config;
+use UnraidAppdataSync\LogManager;
+use UnraidAppdataSync\Settings;
+
 header('Content-Type: application/json');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
+$varIni = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
+$csrf   = is_string($_POST['csrf_token'] ?? null) ? $_POST['csrf_token'] : '';
+
+if (empty($varIni['csrf_token']) || $csrf !== $varIni['csrf_token']) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Invalid CSRF token.']);
     exit;
 }
 
-require_once __DIR__ . '/Config.php';
-require_once __DIR__ . '/Settings.php';
-
-use UnraidAppdataSync\Config;
-use UnraidAppdataSync\Settings;
-
-const LOG_FILE    = '/tmp/appdatasync.log';
 const PID_FILE    = '/tmp/appdatasync.pid';
 const SCRIPT_PATH = '/usr/local/emhttp/plugins/appdatasync/backup.py';
-
-$varIni = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
 
 function postStr(string $key, string $default = ''): string
 {
@@ -39,10 +41,12 @@ function isProcessRunning(int $pid): bool
     if ($pid <= 0) {
         return false;
     }
+
     exec('kill -0 ' . $pid . ' 2>/dev/null', $out, $rc);
     if ($rc !== 0) {
         return false;
     }
+
     $cmdline = @file_get_contents('/proc/' . $pid . '/cmdline');
     return $cmdline !== false && str_contains($cmdline, 'backup.py');
 }
@@ -60,9 +64,10 @@ function saveJobState(array $state): void
 }
 
 /**
+ * @param list<string>         $groups
  * @param array<string, string> $extraEnv
  */
-function startBackupJob(string $args, array $extraEnv = []): void
+function startBackupJob(string $args, string $operation, array $groups, bool $dryRun, array $extraEnv = []): void
 {
     $python = is_executable('/usr/bin/python3') ? '/usr/bin/python3' : 'python3';
 
@@ -70,7 +75,8 @@ function startBackupJob(string $args, array $extraEnv = []): void
         putenv((string)$k . '=' . (string)$v);
     }
 
-    file_put_contents(LOG_FILE, '');
+    $logFile = LogManager::generatePath($operation);
+    file_put_contents($logFile, '');
     @unlink(PID_FILE);
 
     $cmd = sprintf(
@@ -78,7 +84,7 @@ function startBackupJob(string $args, array $extraEnv = []): void
         escapeshellarg($python),
         escapeshellarg(SCRIPT_PATH),
         $args,
-        escapeshellarg(LOG_FILE)
+        escapeshellarg($logFile)
     );
 
     $output = [];
@@ -91,26 +97,19 @@ function startBackupJob(string $args, array $extraEnv = []): void
     }
 
     file_put_contents(PID_FILE, (string)$pid);
+    LogManager::setCurrentLog($logFile);
     saveJobState([
         'running'     => true,
         'pid'         => $pid,
         'started_at'  => date('c'),
+        'operation'   => $operation,
+        'groups'      => $groups,
+        'dry_run'     => $dryRun,
         'last_result' => null,
     ]);
 
     echo json_encode(['success' => true, 'message' => 'Job started.', 'pid' => $pid]);
     exit;
-}
-
-function detectFailure(string $log): bool
-{
-    if (preg_match('/\b(\d+)\s+failed\b/', $log, $m)) {
-        return (int)$m[1] > 0;
-    }
-    if (preg_match('/\b(CRITICAL|FAILED|rsync failed|Backup error|Restore error)\b/i', $log)) {
-        return true;
-    }
-    return false;
 }
 
 $action = postStr('action');
@@ -189,19 +188,21 @@ switch ($action) {
             jsonResponse(false, 'A backup job is already running.');
         }
 
-        $args  = '';
-        $group = postStr('group');
+        $args   = '';
+        $group  = postStr('group');
+        $groups = $group !== '' ? [$group] : [];
         if ($group !== '') {
             $args .= ' --group ' . escapeshellarg($group);
         }
-        if (postStr('dry_run') === 'true') {
+        $dryRun = postStr('dry_run') === 'true';
+        if ($dryRun) {
             $args .= ' --dry-run';
         }
         if (postStr('debug') === 'true') {
             $args .= ' --debug';
         }
 
-        startBackupJob($args);
+        startBackupJob($args, 'Backup', $groups, $dryRun);
         // never reached
 
         // no break
@@ -215,15 +216,16 @@ switch ($action) {
             jsonResponse(false, 'Group is required for restore.');
         }
 
-        $args = ' --restore --restore-group ' . escapeshellarg($group);
-        if (postStr('dry_run') === 'true') {
+        $args   = ' --restore --restore-group ' . escapeshellarg($group);
+        $dryRun = postStr('dry_run') === 'true';
+        if ($dryRun) {
             $args .= ' --dry-run';
         }
         if (postStr('debug') === 'true') {
             $args .= ' --debug';
         }
 
-        startBackupJob($args);
+        startBackupJob($args, 'Restore', [$group], $dryRun);
         // never reached
 
         // no break
@@ -240,34 +242,41 @@ switch ($action) {
 
         $args = ' --restore --restore-group ' . escapeshellarg($group)
               . ' --restore-container ' . escapeshellarg($container);
-        if (postStr('dry_run') === 'true') {
+        $dryRun = postStr('dry_run') === 'true';
+        if ($dryRun) {
             $args .= ' --dry-run';
         }
         if (postStr('debug') === 'true') {
             $args .= ' --debug';
         }
 
-        startBackupJob($args);
+        startBackupJob($args, 'Restore', [$group], $dryRun);
         // never reached
 
         // no break
     case 'poll_log':
         try {
             $offset  = max(0, (int)postStr('offset'));
-            $full    = is_file(LOG_FILE) ? (string)file_get_contents(LOG_FILE) : '';
+            $logFile = LogManager::currentLog();
+            if ($logFile === null || ! is_file($logFile)) {
+                $logFile = null;
+            }
+            $full    = ($logFile !== null) ? (string)file_get_contents($logFile) : '';
             $pid     = (int)@file_get_contents(PID_FILE);
             $running = $pid > 0 && isProcessRunning($pid);
 
             $done   = ! $running && $pid > 0;
-            $failed = $done      && detectFailure($full);
+            $failed = $done      && LogManager::detectFailure($full);
 
-            if ($done) {
-                saveJobState([
-                    'running'     => false,
-                    'pid'         => null,
-                    'last_run'    => date('c'),
-                    'last_result' => $failed ? 'failed' : 'success',
-                ]);
+            if ($done && $logFile !== null) {
+                $state     = Settings::loadState();
+                $operation = is_string($state['operation'] ?? null) ? (string)$state['operation'] : 'Backup';
+                $groups    = isset($state['groups']) && is_array($state['groups'])
+                    ? array_values(array_filter($state['groups'], 'is_string'))
+                    : [];
+                $dryRun  = (bool)($state['dry_run'] ?? false);
+                $started = is_string($state['started_at'] ?? null) ? (string)$state['started_at'] : date('c');
+                LogManager::finalizeRun($logFile, $operation, $groups, $dryRun, $started);
                 @unlink(PID_FILE);
             }
 
@@ -297,6 +306,27 @@ switch ($action) {
                 'last_run'    => $state['last_run']    ?? null,
                 'last_result' => $state['last_result'] ?? null,
             ]);
+        } catch (\Throwable $e) {
+            jsonResponse(false, $e->getMessage());
+        }
+        exit;
+
+    case 'get_history':
+        try {
+            echo json_encode(['success' => true, 'history' => LogManager::history()]);
+        } catch (\Throwable $e) {
+            jsonResponse(false, $e->getMessage());
+        }
+        exit;
+
+    case 'view_log':
+        try {
+            $filename = postStr('filename');
+            if ($filename === '') {
+                jsonResponse(false, 'Filename is required.');
+            }
+            $content = LogManager::readLog($filename);
+            echo json_encode(['success' => true, 'content' => $content]);
         } catch (\Throwable $e) {
             jsonResponse(false, $e->getMessage());
         }
