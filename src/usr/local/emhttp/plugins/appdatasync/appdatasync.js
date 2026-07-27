@@ -195,17 +195,19 @@ function moveContainer(mainRow, direction) {
 
 let modalOkCallback = null;
 let lastFocusedElement = null;
+let modalOpenDepth = 0;
 
 function openModal(title, bodyHtml, okCallback) {
   lastFocusedElement = document.activeElement;
   modalOkCallback = okCallback;
+  modalOpenDepth++;
   const modal = document.getElementById('adbModal');
   document.getElementById('adbModalTitle').textContent = title;
   document.getElementById('adbModalBody').innerHTML = bodyHtml;
   modal.style.display = 'block';
   const okBtn = document.getElementById('adbModalOk');
   // Run the callback first (it reads the selection from the modal body), then
-  // close. closeModal() clears the body, so the callback must run before it.
+  // close. closeModal() clears the body only when the last nested modal closes.
   okBtn.onclick = () => {
     const cb = modalOkCallback;
     if (cb) cb();
@@ -216,6 +218,11 @@ function openModal(title, bodyHtml, okCallback) {
 }
 
 function closeModal() {
+  modalOpenDepth = Math.max(0, modalOpenDepth - 1);
+  if (modalOpenDepth > 0) {
+    // Another modal is still open; leave its body intact.
+    return;
+  }
   document.getElementById('adbModal').style.display = 'none';
   document.getElementById('adbModalBody').innerHTML = '';
   modalOkCallback = null;
