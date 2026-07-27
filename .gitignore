@@ -3,3 +3,5 @@
 .php-cs-fixer.cache
 vendor
 unraid-plugin-customizer
+__pycache__
+*.pyc

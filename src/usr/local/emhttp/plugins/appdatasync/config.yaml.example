@@ -1,0 +1,48 @@
+# Path where all backups will be stored.
+backup_destination: /mnt/user/backup/appdata
+
+# Whether to organize backups into subfolders based on groups (e.g., group-1, group-2).
+store_by_group: yes
+
+# Host profiles. SSH credentials defined here are inherited by containers unless
+# a container enables ssh_override. The "local" host is always available and has
+# no SSH settings.
+hosts:
+  - name: local
+  - name: my-server
+    ssh_user: userName
+    ssh_key: /mnt/user/system/keys/ssh_key
+    ssh_port: 22
+
+# Definition of backup groups
+groups:
+  group-1:
+    # First container in group-1
+    - name: container-a  # Name of the container
+      host: local  # Container is running on the local machine
+      appdata_path: /mnt/user/appdata/container-a  # Path to the container's appdata/config directory
+      restart: yes  # Stop/Start the container for the backup operation
+      start_delay: 10 # Wait (in seconds) before starting this container. Helpful if a dependent container needs time to init
+
+    # Second container in group-1
+    - name: container-b
+      host: local
+      appdata_path: /mnt/user/appdata/container-b
+      restart: no
+
+  group-2:
+    # First container in group-2, hosted on the remote "my-server" host profile
+    - name: container-c
+      host: my-server  # References the host profile above
+      appdata_path: /docker/container-c  # Appdata path on the remote server
+      restart: yes
+
+    # Second container in group-2, also on "my-server", with a one-off SSH override
+    - name: container-d
+      host: my-server
+      ssh_override: yes
+      ssh_user: otherUser
+      ssh_key: /mnt/user/system/keys/other_key
+      ssh_port: 2222
+      appdata_path: /docker/container-d
+      restart: yes
