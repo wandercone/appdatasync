@@ -1368,7 +1368,8 @@ function renderHistory(history) {
   const rows = history.map(h => {
     const started  = h.started_at  ? new Date(h.started_at).toLocaleString()  : '—';
     const finished = h.finished_at ? new Date(h.finished_at).toLocaleString() : '—';
-    const groups   = Array.isArray(h.groups) ? h.groups.join(', ') : 'all';
+    const groupsArr  = Array.isArray(h.groups) ? h.groups : [];
+    const groupsText = groupsArr.length === 1 && groupsArr[0] === 'all' ? 'all' : (groupsArr.length ? groupsArr.join(', ') : 'all');
     const resultClass = h.result === 'success' ? 'adb-result-success' : (h.result === 'failed' ? 'adb-result-failed' : '');
     const result   = h.result ? h.result.toUpperCase() : 'UNKNOWN';
     const basename = h.log_file ? String(h.log_file).split('/').pop() : '';
@@ -1378,7 +1379,7 @@ function renderHistory(history) {
     return '<tr>'
       + '<td title="Finished: ' + escapeHtml(finished) + '">' + escapeHtml(started) + '</td>'
       + '<td>' + escapeHtml(h.operation || 'Backup') + '</td>'
-      + '<td>' + escapeHtml(groups) + '</td>'
+      + '<td>' + escapeHtml(groupsText) + '</td>'
       + '<td class="' + resultClass + '">' + escapeHtml(result) + '</td>'
       + '<td>' + viewBtn + '</td>'
       + '</tr>';

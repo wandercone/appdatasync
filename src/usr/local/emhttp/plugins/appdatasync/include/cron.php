@@ -91,6 +91,6 @@ logToFile($logFile, 'Starting scheduled backup: ' . $cmd);
 exec($cmd, $output, $rc);
 logToFile($logFile, 'Scheduled backup finished with exit code ' . $rc);
 
-$operationGroups = $groups !== null && $groups !== '' ? explode(',', $groups) : $scheduleGroups;
+$operationGroups = $groups !== null && $groups !== '' ? explode(',', $groups) : ($scheduleGroups === [] ? ['all'] : $scheduleGroups);
 $result          = LogManager::finalizeRun($logFile, 'Backup', $operationGroups, $dryRun, $startedAt);
 exit($result === 'failed' ? 1 : $rc);

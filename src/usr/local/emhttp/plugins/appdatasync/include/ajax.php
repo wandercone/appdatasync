@@ -190,7 +190,7 @@ switch ($action) {
 
         $args   = '';
         $group  = postStr('group');
-        $groups = $group !== '' ? [$group] : [];
+        $groups = $group !== '' ? [$group] : ['all'];
         if ($group !== '') {
             $args .= ' --group ' . escapeshellarg($group);
         }

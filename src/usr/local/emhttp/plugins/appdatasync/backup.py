@@ -329,6 +329,18 @@ def start_container(container_id, docker_client, host, dry_run=False):
         return False
 
 
+def rsync_info_flags():
+    """Return rsync --info flags appropriate for the output destination.
+
+    When stdout is a terminal, show live per-file progress. When output is
+    redirected (e.g., to a log file by the web UI or cron), emit only a concise
+    final stats summary to avoid multi-megabyte logs.
+    """
+    if sys.stdout.isatty():
+        return ["--info=progress2"]
+    return ["--info=stats2"]
+
+
 def backup_container_appdata(source_path, dest_root, container_id, host, ssh_user, ssh_key=None, ssh_port=22, dry_run=False, debug=False):
     """Rsync a container's appdata directory to dest_root/container_id.
 
@@ -354,7 +366,7 @@ def backup_container_appdata(source_path, dest_root, container_id, host, ssh_use
     try:
         dest_path.mkdir(parents=True, exist_ok=True)
 
-        rsync_command = ["rsync", "-a", "--info=progress2", "--delete", "-s"]
+        rsync_command = ["rsync", "-a", *rsync_info_flags(), "--delete", "-s"]
 
         if host != "local":
             ssh_command = f"/usr/bin/ssh -o Compression=no -x -p {ssh_port}"
@@ -422,7 +434,7 @@ def restore_container_appdata(backup_root, container_id, dest_path, host, ssh_us
             mkdir_cmd.append(f"mkdir -p {shlex.quote(str(dest_path))}")
             subprocess.run(mkdir_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        rsync_command = ["rsync", "-a", "--info=progress2", "--delete", "-s"]
+        rsync_command = ["rsync", "-a", *rsync_info_flags(), "--delete", "-s"]
 
         if host != "local":
             ssh_command = f"/usr/bin/ssh -o Compression=no -x -p {ssh_port}"
