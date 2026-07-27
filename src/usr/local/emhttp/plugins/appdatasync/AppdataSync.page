@@ -76,35 +76,41 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
   </dl>
   <div class="adb-hooks-global" title="FAT32 filesystems (like /boot/config on Unraid flash) do not preserve Unix execute bits. Store hooks on a filesystem that supports permissions, or prefix the path with the interpreter (e.g., /bin/bash /boot/config/...).">
     <h4><i class="fa fa-code"></i> Global Hooks <i class="fa fa-question-circle adb-help-icon"></i></h4>
-    <div class="adb-hooks-grid">
-      <dl>
-        <dt>Pre-Backup Script</dt>
-        <dd>
-          <input type="text" id="globalPreBackup" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/pre-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;">
-          <span class="adb-field-hint">Runs once before a backup.</span>
-        </dd>
-      </dl>
-      <dl>
-        <dt>Post-Backup Script</dt>
-        <dd>
-          <input type="text" id="globalPostBackup" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/post-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;">
-          <span class="adb-field-hint">Runs once after a backup.</span>
-        </dd>
-      </dl>
-      <dl>
-        <dt>Pre-Restore Script</dt>
-        <dd>
-          <input type="text" id="globalPreRestore" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/pre-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;">
-          <span class="adb-field-hint">Runs once before a restore.</span>
-        </dd>
-      </dl>
-      <dl>
-        <dt>Post-Restore Script</dt>
-        <dd>
-          <input type="text" id="globalPostRestore" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/post-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;">
-          <span class="adb-field-hint">Runs once after a restore.</span>
-        </dd>
-      </dl>
+    <div class="adb-hooks-panels">
+      <div class="adb-hook-panel">
+        <h5><i class="fa fa-hdd-o"></i> Backup</h5>
+        <dl>
+          <dt>Pre-Backup Script</dt>
+          <dd>
+            <input type="text" id="globalPreBackup" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/pre-backup.sh" autocomplete="off" spellcheck="false">
+            <span class="adb-field-hint">Runs once before a backup.</span>
+          </dd>
+        </dl>
+        <dl>
+          <dt>Post-Backup Script</dt>
+          <dd>
+            <input type="text" id="globalPostBackup" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/post-backup.sh" autocomplete="off" spellcheck="false">
+            <span class="adb-field-hint">Runs once after a backup.</span>
+          </dd>
+        </dl>
+      </div>
+      <div class="adb-hook-panel">
+        <h5><i class="fa fa-history"></i> Restore</h5>
+        <dl>
+          <dt>Pre-Restore Script</dt>
+          <dd>
+            <input type="text" id="globalPreRestore" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/pre-restore.sh" autocomplete="off" spellcheck="false">
+            <span class="adb-field-hint">Runs once before a restore.</span>
+          </dd>
+        </dl>
+        <dl>
+          <dt>Post-Restore Script</dt>
+          <dd>
+            <input type="text" id="globalPostRestore" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/post-restore.sh" autocomplete="off" spellcheck="false">
+            <span class="adb-field-hint">Runs once after a restore.</span>
+          </dd>
+        </dl>
+      </div>
     </div>
   </div>
 </div>

@@ -615,11 +615,17 @@ function buildGroupNode(groupName, groupValue) {
   hooksDiv.title = "FAT32 filesystems (like /boot/config on Unraid flash) do not preserve Unix execute bits. Store hooks on a filesystem that supports permissions, or prefix the path with the interpreter (e.g., /bin/bash /boot/config/...).";
   hooksDiv.innerHTML = `
     <h4 class="adb-hooks-toggle"><i class="fa fa-chevron-right"></i> <i class="fa fa-code"></i> Group Hooks <i class="fa fa-question-circle adb-help-icon"></i></h4>
-    <div class="adb-hooks-body adb-hooks-grid" style="display:none;">
-      <label>Pre-Backup Script <input type="text" class="gPreBackup hookPath" value="${escapeHtml(groupHooks.pre_backup  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
-      <label>Post-Backup Script <input type="text" class="gPostBackup hookPath" value="${escapeHtml(groupHooks.post_backup || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-backup.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
-      <label>Pre-Restore Script <input type="text" class="gPreRestore hookPath" value="${escapeHtml(groupHooks.pre_restore  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
-      <label>Post-Restore Script <input type="text" class="gPostRestore hookPath" value="${escapeHtml(groupHooks.post_restore || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-restore.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+    <div class="adb-hooks-body adb-hooks-panels" style="display:none;">
+      <div class="adb-hook-panel">
+        <h5><i class="fa fa-hdd-o"></i> Backup</h5>
+        <label>Pre-Backup Script <input type="text" class="gPreBackup hookPath" value="${escapeHtml(groupHooks.pre_backup  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-backup.sh" autocomplete="off" spellcheck="false"></label>
+        <label>Post-Backup Script <input type="text" class="gPostBackup hookPath" value="${escapeHtml(groupHooks.post_backup || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-backup.sh" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="adb-hook-panel">
+        <h5><i class="fa fa-history"></i> Restore</h5>
+        <label>Pre-Restore Script <input type="text" class="gPreRestore hookPath" value="${escapeHtml(groupHooks.pre_restore  || groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre-restore.sh" autocomplete="off" spellcheck="false"></label>
+        <label>Post-Restore Script <input type="text" class="gPostRestore hookPath" value="${escapeHtml(groupHooks.post_restore || groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post-restore.sh" autocomplete="off" spellcheck="false"></label>
+      </div>
     </div>
   `;
   const hooksToggle = hooksDiv.querySelector('.adb-hooks-toggle');
