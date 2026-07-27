@@ -101,7 +101,6 @@ final class Config
         }
 
         $validHookKeys = ['pre_run' => true, 'post_run' => true, 'pre_group' => true, 'post_group' => true];
-        /** @var array<mixed, mixed> $globalHooks */
         $globalHooks = is_array($config['hooks'] ?? null) ? $config['hooks'] : [];
         foreach (array_keys($globalHooks) as $hookKey) {
             if ( ! isset($validHookKeys[$hookKey])) {
@@ -114,7 +113,6 @@ final class Config
         }
 
         $groups = $config['groups'];
-        /** @var array<mixed, mixed> $groupValue */
         foreach ($groups as $groupName => $groupValue) {
             if ($groupName === '') {
                 return ['success' => false, 'message' => 'Group names must be non-empty strings.'];
@@ -125,14 +123,11 @@ final class Config
             }
 
             $containers = [];
-            /** @var array<mixed, mixed> $groupHooks */
             $groupHooks = [];
             if (isset($groupValue['containers']) && is_array($groupValue['containers'])) {
-                /** @var list<array<mixed, mixed>> $containers */
                 $containers = $groupValue['containers'];
                 $groupHooks = isset($groupValue['hooks']) && is_array($groupValue['hooks']) ? $groupValue['hooks'] : [];
             } else {
-                /** @var list<array<mixed, mixed>> $containers */
                 $containers = $groupValue;
             }
 
@@ -374,13 +369,10 @@ final class Config
 
         $needsMigration = false;
         $groups         = $config['groups'];
-        /** @var array<mixed, mixed> $groupValue */
         foreach ($groups as $groupName => &$groupValue) {
             if (is_array($groupValue) && isset($groupValue['containers']) && is_array($groupValue['containers'])) {
-                /** @var list<array<mixed, mixed>> $containers */
                 $containers =& $groupValue['containers'];
             } elseif (is_array($groupValue)) {
-                /** @var list<array<mixed, mixed>> $containers */
                 $containers =& $groupValue;
             } else {
                 continue;

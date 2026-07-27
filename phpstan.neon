@@ -18,3 +18,4 @@ parameters:
         - "#parse_plugin_cfg#"
       identifier: function.notFound
   reportUnmatchedIgnoredErrors: false
+  treatPhpDocTypesAsCertain: false
