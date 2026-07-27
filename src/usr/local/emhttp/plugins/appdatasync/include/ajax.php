@@ -33,6 +33,9 @@ function jsonResponse(bool $success, string $message): never
     exit;
 }
 
+/**
+ * @phpstan-impure
+ */
 function isProcessRunning(int $pid): bool
 {
     if ($pid <= 0) {
@@ -320,7 +323,7 @@ switch ($action) {
 
             $deadline = microtime(true) + 3.0;
             while (microtime(true) < $deadline) {
-                if (! isProcessRunning($pid)) {
+                if ( ! isProcessRunning($pid)) {
                     break;
                 }
                 usleep(100_000);
@@ -332,7 +335,7 @@ switch ($action) {
             }
 
             $stillRunning = isProcessRunning($pid);
-            if (! $stillRunning) {
+            if ( ! $stillRunning) {
                 @unlink(PID_FILE);
                 $logFile = LogManager::currentLog();
                 if ($logFile !== null && is_file($logFile)) {
@@ -348,8 +351,8 @@ switch ($action) {
                 $groups    = isset($state['groups']) && is_array($state['groups'])
                     ? array_values(array_filter($state['groups'], 'is_string'))
                     : [];
-                $dryRun    = (bool)($state['dry_run'] ?? false);
-                $started   = is_string($state['started_at'] ?? null) ? (string)$state['started_at'] : date('c');
+                $dryRun  = (bool)($state['dry_run'] ?? false);
+                $started = is_string($state['started_at'] ?? null) ? (string)$state['started_at'] : date('c');
                 if ($logFile !== null && is_file($logFile)) {
                     LogManager::finalizeRun($logFile, $operation, $groups, $dryRun, $started);
                 }
