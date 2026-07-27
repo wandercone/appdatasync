@@ -101,7 +101,7 @@ final class Config
         }
 
         $validHookKeys = ['pre_run' => true, 'post_run' => true, 'pre_group' => true, 'post_group' => true];
-        $globalHooks = is_array($config['hooks'] ?? null) ? $config['hooks'] : [];
+        $globalHooks   = is_array($config['hooks'] ?? null) ? $config['hooks'] : [];
         foreach (array_keys($globalHooks) as $hookKey) {
             if ( ! isset($validHookKeys[$hookKey])) {
                 return ['success' => false, 'message' => "Unknown hook key '{$hookKey}'."];
@@ -371,9 +371,9 @@ final class Config
         $groups         = $config['groups'];
         foreach ($groups as $groupName => &$groupValue) {
             if (is_array($groupValue) && isset($groupValue['containers']) && is_array($groupValue['containers'])) {
-                $containers =& $groupValue['containers'];
+                $containers = & $groupValue['containers'];
             } elseif (is_array($groupValue)) {
-                $containers =& $groupValue;
+                $containers = & $groupValue;
             } else {
                 continue;
             }
