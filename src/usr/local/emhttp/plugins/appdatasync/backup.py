@@ -77,6 +77,19 @@ def release_lock():
         pass
 
 
+def normalize_group(value):
+    """Return (containers, hooks) from either a list or a dict with hooks + containers."""
+    if isinstance(value, list):
+        return value, {}
+    if isinstance(value, dict) and isinstance(value.get('containers'), list):
+        return value['containers'], (value.get('hooks') or {})
+    if isinstance(value, dict):
+        # Legacy/unknown shape: treat keys other than 'hooks' as container entries.
+        containers = [v for k, v in value.items() if k != 'hooks' and isinstance(v, dict)]
+        return containers, (value.get('hooks') or {})
+    raise ValueError("Group must be a list of containers or a mapping with 'containers'.")
+
+
 def validate_config_structure(config):
     """Perform a quick structural validation of the loaded configuration."""
     if not isinstance(config, dict):
@@ -85,6 +98,11 @@ def validate_config_structure(config):
         raise ValueError("backup_destination is required and must be a non-empty string.")
     if not isinstance(config.get('groups'), dict) or not config['groups']:
         raise ValueError("groups must be a non-empty mapping.")
+    for group_name, group_value in config['groups'].items():
+        try:
+            normalize_group(group_value)
+        except ValueError as e:
+            raise ValueError(f"Group '{group_name}': {e}")
 
 
 def _log_summary(summary, operation='Backup', dry_run=False):
@@ -115,13 +133,61 @@ def _log_summary(summary, operation='Backup', dry_run=False):
     return 1 if failed else 0
 
 
+def run_hook(script_path, env, label, dry_run=False):
+    """Execute a user-supplied hook script. Returns True on success, False on failure.
+
+    In dry-run mode the command is logged but not executed. Non-zero exit code is
+    treated as failure and an Unraid notification is sent.
+    """
+    if not script_path or not isinstance(script_path, str):
+        return True
+
+    path = Path(script_path)
+    if not path.is_absolute():
+        logger.error(f"Hook refused ({label}): path must be absolute: {script_path}")
+        notify_host("Hook error", f"{label} path is not absolute: {script_path}", icon="alert", dry_run=dry_run)
+        return False
+
+    if dry_run:
+        logger.info(f"- DRY RUN - Would run hook: {label} -> {script_path}")
+        return True
+
+    if not path.exists():
+        logger.error(f"Hook not found ({label}): {script_path}")
+        notify_host("Hook error", f"{label} not found: {script_path}", icon="alert", dry_run=dry_run)
+        return False
+
+    if not os.access(path, os.X_OK):
+        # Try to run via the shell if not executable; still safer to require execute bit.
+        logger.warning(f"Hook is not executable ({label}): {script_path}")
+
+    logger.info(f"Running hook: {label} -> {script_path}")
+    try:
+        subprocess.run([str(path)], check=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        logger.info(f"Hook succeeded: {label}")
+        return True
+    except subprocess.CalledProcessError as e:
+        msg = f"{label} failed (exit {e.returncode}): {script_path}"
+        if e.stdout:
+            msg += f"\n{e.stdout}"
+        notify_host("Hook error", msg, icon="alert", dry_run=dry_run)
+        logger.error(msg)
+        return False
+    except Exception as e:
+        msg = f"{label} failed: {script_path}: {e}"
+        notify_host("Hook error", msg, icon="alert", dry_run=dry_run)
+        logger.error(msg)
+        return False
+
+
 def validate_remote_containers(config):
     """Raise ValueError if any remote container references a missing host or lacks SSH credentials."""
     hosts = {h['name']: h for h in config.get('hosts', []) if isinstance(h, dict) and h.get('name')}
     if 'local' not in hosts:
         hosts['local'] = {'name': 'local'}
 
-    for group_name, containers in config["groups"].items():
+    for group_name, raw_group in config["groups"].items():
+        containers, _ = normalize_group(raw_group)
         for container in containers:
             host_name = container.get("host", "local")
             if host_name == "local":
@@ -154,7 +220,8 @@ def resolve_host_defaults(config):
     if 'local' not in hosts:
         hosts['local'] = {'name': 'local'}
 
-    for group_name, containers in config["groups"].items():
+    for group_name, raw_group in config["groups"].items():
+        containers, _ = normalize_group(raw_group)
         for container in containers:
             host_name = container.get("host", "local")
             if host_name == "local":
@@ -449,6 +516,8 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
+    operation_label = 'Restore' if args.restore else 'Backup'
+
     if args.debug:
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug logging enabled.")
@@ -493,8 +562,25 @@ def main():
             {args.group: config["groups"][args.group]} if args.group else config["groups"]
         )
         store_by_group = config.get("store_by_group", False)
+        global_hooks = config.get("hooks", {}) if isinstance(config.get("hooks"), dict) else {}
+        all_group_names = list(groups_to_process.keys())
 
         summary = {}
+
+        base_env = {
+            **os.environ,
+            'APPDATA_OPERATION': operation_label,
+            'APPDATA_DRY_RUN': '1' if args.dry_run else '0',
+            'APPDATA_GROUPS': ','.join(all_group_names),
+            'APPDATA_CONFIG': args.config,
+        }
+
+        # --------------------------
+        # GLOBAL PRE-RUN HOOK
+        # --------------------------
+        if not run_hook(global_hooks.get('pre_run'), base_env, 'Global pre-run', dry_run=args.dry_run):
+            logger.info("RESULT: failed")
+            return 1
 
         # --------------------------
         # RESTORE BACKUP TO GROUP / GROUP + CONTAINER
@@ -518,11 +604,19 @@ def main():
             stopped_containers = set()
             container_matched = False
 
-            for group_name, containers in restore_groups.items():
-                backup_root = (
-                    Path(config["backup_destination"]) / group_name
-                    if store_by_group else Path(config["backup_destination"])
-                )
+            for group_name, raw_group in restore_groups.items():
+                containers, group_hooks = normalize_group(raw_group)
+                group_env = {
+                    **base_env,
+                    'APPDATA_GROUP': group_name,
+                    'APPDATA_BACKUP_ROOT': str(Path(config["backup_destination"]) / group_name if store_by_group else Path(config["backup_destination"])),
+                }
+
+                if not run_hook(group_hooks.get('pre_group'), group_env, f'Group {group_name} pre-group', dry_run=args.dry_run):
+                    logger.info("RESULT: failed")
+                    return 1
+
+                backup_root = Path(group_env['APPDATA_BACKUP_ROOT'])
                 logger.info(f"Restoring group: {group_name}")
 
                 for container in containers:
@@ -534,8 +628,8 @@ def main():
                     appdata_path = container.get("appdata_path")
                     client = get_docker_client(host)
                     if client is None:
-                        logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
-                        summary[(container_id, host)] = [container_id, host, 'skipped', 'Docker connection failed']
+                        logger.error(f"Container {container_id} failed due to Docker connection issue on {host}")
+                        summary[(container_id, host)] = [container_id, host, 'failed', 'Docker connection failed']
                         continue
                     if args.restore_container and container_id != args.restore_container:
                         continue
@@ -581,6 +675,10 @@ def main():
             if args.restore_container and not container_matched:
                 logger.warning(f"No container named '{args.restore_container}' found in the specified group(s).")
 
+            if not run_hook(group_hooks.get('post_group'), group_env, f'Group {group_name} post-group', dry_run=args.dry_run):
+                logger.info("RESULT: failed")
+                return 1
+
             rc = _log_summary(summary, operation='Restore', dry_run=args.dry_run)
             logger.info(f"RESULT: {'failed' if rc != 0 else 'success'}")
             return rc
@@ -588,8 +686,19 @@ def main():
         # --------------------------
         # PERFORM A BACKUP IF --restore IS NOT PASSED
         # --------------------------
-        for group_name, containers in groups_to_process.items():
-            backup_root = Path(config["backup_destination"]) / group_name if store_by_group else Path(config["backup_destination"])
+        for group_name, raw_group in groups_to_process.items():
+            containers, group_hooks = normalize_group(raw_group)
+            group_env = {
+                **base_env,
+                'APPDATA_GROUP': group_name,
+                'APPDATA_BACKUP_ROOT': str(Path(config["backup_destination"]) / group_name if store_by_group else Path(config["backup_destination"])),
+            }
+
+            if not run_hook(group_hooks.get('pre_group'), group_env, f'Group {group_name} pre-group', dry_run=args.dry_run):
+                logger.info("RESULT: failed")
+                return 1
+
+            backup_root = Path(group_env['APPDATA_BACKUP_ROOT'])
             if args.dry_run:
                 logger.info(f"- DRY RUN - Would create directory {backup_root} if it doesn't exist")
             else:
@@ -631,8 +740,8 @@ def main():
                 ssh_port = container.get("ssh_port", 22)
                 client = get_docker_client(host)
                 if client is None:
-                    logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
-                    summary[(container_id, host)] = [container_id, host, 'skipped', 'Docker connection failed']
+                    logger.error(f"Container {container_id} failed due to Docker connection issue on {host}")
+                    summary[(container_id, host)] = [container_id, host, 'failed', 'Docker connection failed']
                     continue
 
                 if container_id in stop_failed:
@@ -689,6 +798,14 @@ def main():
                     if (container_id, host) in summary:
                         summary[(container_id, host)][2] = 'failed'
                         summary[(container_id, host)][3] = 'start failed'
+
+            if not run_hook(group_hooks.get('post_group'), group_env, f'Group {group_name} post-group', dry_run=args.dry_run):
+                logger.info("RESULT: failed")
+                return 1
+
+        if not run_hook(global_hooks.get('post_run'), base_env, 'Global post-run', dry_run=args.dry_run):
+            logger.info("RESULT: failed")
+            return 1
 
         rc = _log_summary(summary, operation='Backup', dry_run=args.dry_run)
         logger.info(f"RESULT: {'failed' if rc != 0 else 'success'}")

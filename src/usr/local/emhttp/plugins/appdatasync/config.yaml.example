@@ -4,6 +4,12 @@ backup_destination: /mnt/user/backup/appdata
 # Whether to organize backups into subfolders based on groups (e.g., group-1, group-2).
 store_by_group: yes
 
+# Optional global hooks run before/after the entire operation.
+# Paths must be absolute. Non-zero exit aborts the run and marks it failed.
+hooks:
+  pre_run: /boot/config/plugins/appdatasync/hooks/pre-run.sh
+  post_run: /boot/config/plugins/appdatasync/hooks/post-run.sh
+
 # Host profiles. SSH credentials defined here are inherited by containers unless
 # a container enables ssh_override. The "local" host is always available and has
 # no SSH settings.
@@ -17,6 +23,13 @@ hosts:
 # Definition of backup groups
 groups:
   group-1:
+    # Optional group-level hooks run before/after this group.
+    # Global pre_run runs first, then this group's pre_group, then the group backup,
+    # then this group's post_group, then global post_run.
+    hooks:
+      pre_group: /boot/config/plugins/appdatasync/hooks/group-1-pre.sh
+      post_group: /boot/config/plugins/appdatasync/hooks/group-1-post.sh
+
     # First container in group-1
     - name: container-a  # Name of the container
       host: local  # Container is running on the local machine

@@ -100,13 +100,48 @@ final class Config
             return ['success' => false, 'message' => 'groups must be a mapping.'];
         }
 
+        $validHookKeys = ['pre_run' => true, 'post_run' => true, 'pre_group' => true, 'post_group' => true];
+        if (isset($config['hooks']) && ! is_array($config['hooks'])) {
+            return ['success' => false, 'message' => 'hooks must be a mapping.'];
+        }
+        foreach (array_keys($config['hooks'] ?? []) as $hookKey) {
+            if ( ! isset($validHookKeys[$hookKey])) {
+                return ['success' => false, 'message' => "Unknown hook key '{$hookKey}'."];
+            }
+            $hookPath = self::string($config['hooks'], $hookKey);
+            if ($hookPath !== '' && ! str_starts_with($hookPath, '/')) {
+                return ['success' => false, 'message' => "Global hook '{$hookKey}' must be an absolute path."];
+            }
+        }
+
         $groups = $config['groups'];
-        foreach ($groups as $groupName => $containers) {
+        foreach ($groups as $groupName => $groupValue) {
             if ($groupName === '') {
                 return ['success' => false, 'message' => 'Group names must be non-empty strings.'];
             }
-            if ( ! is_array($containers)) {
-                return ['success' => false, 'message' => "Group '{$groupName}' must contain a list of containers."];
+
+            $containers = [];
+            $groupHooks = [];
+            if (is_array($groupValue)) {
+                $containers = $groupValue;
+            } elseif (is_array($groupValue['containers'] ?? null)) {
+                $containers = $groupValue['containers'];
+                $groupHooks = is_array($groupValue['hooks'] ?? null) ? $groupValue['hooks'] : [];
+            } elseif (is_array($groupValue)) {
+                // Plain list already handled above.
+                $containers = $groupValue;
+            } else {
+                return ['success' => false, 'message' => "Group '{$groupName}' must be a list of containers or a mapping with 'containers'."];
+            }
+
+            foreach (array_keys($groupHooks) as $hookKey) {
+                if ( ! isset($validHookKeys[$hookKey])) {
+                    return ['success' => false, 'message' => "Unknown hook key '{$hookKey}' in group '{$groupName}'."];
+                }
+                $hookPath = self::string($groupHooks, $hookKey);
+                if ($hookPath !== '' && ! str_starts_with($hookPath, '/')) {
+                    return ['success' => false, 'message' => "Group '{$groupName}' hook '{$hookKey}' must be an absolute path."];
+                }
             }
 
             foreach ($containers as $container) {
@@ -337,8 +372,12 @@ final class Config
 
         $needsMigration = false;
         $groups         = $config['groups'];
-        foreach ($groups as $groupName => &$containers) {
-            if ( ! is_array($containers)) {
+        foreach ($groups as $groupName => &$groupValue) {
+            if (is_array($groupValue) && isset($groupValue['containers'])) {
+                $containers =& $groupValue['containers'];
+            } elseif (is_array($groupValue)) {
+                $containers =& $groupValue;
+            } else {
                 continue;
             }
             foreach ($containers as &$container) {
@@ -382,8 +421,9 @@ final class Config
                 }
             }
             unset($container);
+            unset($containers);
         }
-        unset($containers);
+        unset($groupValue);
 
         if ($needsMigration || ! isset($config['hosts'])) {
             $config['hosts'] = array_values($hosts);

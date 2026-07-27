@@ -35,6 +35,8 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
       <button type="button" id="restoreGroupBtn" onclick="pickRestoreGroup()"><i class="fa fa-history"></i> Restore Group</button>
       <button type="button" id="restoreContainerBtn" onclick="pickRestoreContainer()"><i class="fa fa-undo"></i> Restore Container</button>
       <span class="adb-sep"></span>
+      <button type="button" id="cancelJobBtn" onclick="cancelJob()" disabled><i class="fa fa-stop"></i> Cancel Job</button>
+      <span class="adb-sep"></span>
       <label><input type="checkbox" id="dryRunCheck"> Dry run</label>
       <label><input type="checkbox" id="debugCheck"> Debug</label>
       <button type="button" onclick="clearLog()"><i class="fa fa-trash-o"></i> Clear log</button>
@@ -72,6 +74,23 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
       <span class="adb-field-hint">When enabled, each group is backed up to a subfolder under the destination.</span>
     </dd>
   </dl>
+  <div class="adb-hooks-global" title="FAT32 filesystems (like /boot/config on Unraid flash) do not preserve Unix execute bits. Store hooks on a filesystem that supports permissions, or prefix the path with the interpreter (e.g., /bin/bash /boot/config/...).">
+    <h4><i class="fa fa-code"></i> Global Hooks <i class="fa fa-question-circle adb-help-icon"></i></h4>
+    <dl>
+      <dt>Pre-Run Script</dt>
+      <dd>
+        <input type="text" id="globalPreRun" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/pre-run.sh" autocomplete="off" spellcheck="false" style="width:360px;">
+        <span class="adb-field-hint">Runs once before the whole operation.</span>
+      </dd>
+    </dl>
+    <dl>
+      <dt>Post-Run Script</dt>
+      <dd>
+        <input type="text" id="globalPostRun" class="hookPath" value="" placeholder="/boot/config/plugins/appdatasync/hooks/post-run.sh" autocomplete="off" spellcheck="false" style="width:360px;">
+        <span class="adb-field-hint">Runs once after the whole operation.</span>
+      </dd>
+    </dl>
+  </div>
 </div>
 
 <table class="unraid tablesorter"><thead><tr><td><i class="fa fa-server adb-section-icon"></i>Host Profiles</td></tr></thead></table>

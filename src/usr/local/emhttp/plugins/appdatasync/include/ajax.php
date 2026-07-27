@@ -308,6 +308,63 @@ switch ($action) {
         }
         exit;
 
+    case 'cancel_job':
+        try {
+            $pid = (int)@file_get_contents(PID_FILE);
+            if ($pid <= 0 || ! isProcessRunning($pid)) {
+                @unlink(PID_FILE);
+                jsonResponse(false, 'No running job to cancel.');
+            }
+
+            posix_kill($pid, SIGTERM);
+
+            $deadline = microtime(true) + 3.0;
+            while (microtime(true) < $deadline) {
+                if (! isProcessRunning($pid)) {
+                    break;
+                }
+                usleep(100_000);
+            }
+
+            if (isProcessRunning($pid)) {
+                posix_kill($pid, SIGKILL);
+                usleep(250_000);
+            }
+
+            $stillRunning = isProcessRunning($pid);
+            if (! $stillRunning) {
+                @unlink(PID_FILE);
+                $logFile = LogManager::currentLog();
+                if ($logFile !== null && is_file($logFile)) {
+                    file_put_contents(
+                        $logFile,
+                        "[" . date('Y-m-d H:i:s') . "] Job cancelled by user.\n",
+                        FILE_APPEND | LOCK_EX
+                    );
+                }
+
+                $state     = Settings::loadState();
+                $operation = is_string($state['operation'] ?? null) ? (string)$state['operation'] : 'Backup';
+                $groups    = isset($state['groups']) && is_array($state['groups'])
+                    ? array_values(array_filter($state['groups'], 'is_string'))
+                    : [];
+                $dryRun    = (bool)($state['dry_run'] ?? false);
+                $started   = is_string($state['started_at'] ?? null) ? (string)$state['started_at'] : date('c');
+                if ($logFile !== null && is_file($logFile)) {
+                    LogManager::finalizeRun($logFile, $operation, $groups, $dryRun, $started);
+                }
+            }
+
+            echo json_encode([
+                'success' => ! $stillRunning,
+                'running' => $stillRunning,
+                'message' => $stillRunning ? 'Job did not terminate.' : 'Job cancelled.',
+            ]);
+        } catch (\Throwable $e) {
+            jsonResponse(false, $e->getMessage());
+        }
+        exit;
+
     case 'get_history':
         try {
             echo json_encode(['success' => true, 'history' => LogManager::history()]);

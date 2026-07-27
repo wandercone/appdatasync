@@ -84,6 +84,14 @@
   flex: 0 0 auto;
   opacity: 0.6;
 }
+#adbForm .adb-actions #cancelJobBtn {
+  color: #fff;
+  background: var(--red, #ef5350);
+}
+#adbForm .adb-actions #cancelJobBtn:disabled {
+  opacity: 0.6;
+  background: var(--gray, #888);
+}
 #adbForm .adb-log {
   display: none;
   margin: 0;
@@ -98,6 +106,33 @@
   white-space: pre-wrap;
 }
 #adbForm .adb-log.has-error { color: var(--red, #ef5350); }
+#adbForm .adb-help-icon {
+  color: var(--text-color, #888);
+  cursor: help;
+  margin-left: 4px;
+}
+#adbForm .adb-hooks-global,
+#adbForm .adb-hooks-group {
+  border-top: 1px solid var(--border-color, #ddd);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+#adbForm .adb-hooks-group label {
+  display: block;
+  margin-bottom: 6px;
+}
+#adbForm .adb-hooks-toggle {
+  cursor: pointer;
+  user-select: none;
+  margin: 0 0 8px 0;
+  font-size: 14px;
+}
+#adbForm .adb-hooks-toggle .fa-chevron-right,
+#adbForm .adb-hooks-toggle .fa-chevron-down {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+}
 #adbForm .adb-host-table-wrap,
 #adbForm .adb-container-table-wrap {
   overflow-x: auto;

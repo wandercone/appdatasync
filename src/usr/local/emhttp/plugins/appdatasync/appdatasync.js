@@ -1,4 +1,10 @@
-let currentConfig = { backup_destination: '/mnt/user/backup/appdata', store_by_group: true, hosts: [{ name: 'local' }], groups: {} };
+let currentConfig = {
+  backup_destination: '/mnt/user/backup/appdata',
+  store_by_group: true,
+  hooks: { pre_run: '', post_run: '' },
+  hosts: [{ name: 'local' }],
+  groups: {},
+};
 let pollTimer = null;
 let logOffset = 0;
 
@@ -169,8 +175,19 @@ function pickGroup(callback) {
   });
 }
 
+function getGroupContainers(groupName) {
+  const group = currentConfig.groups[groupName];
+  if (Array.isArray(group)) {
+    return group;
+  }
+  if (group && typeof group === 'object' && Array.isArray(group.containers)) {
+    return group.containers;
+  }
+  return [];
+}
+
 function pickConfiguredContainer(group, callback) {
-  const containers = (currentConfig.groups[group] || [])
+  const containers = getGroupContainers(group)
     .map(c => c.name)
     .filter(Boolean);
   if (containers.length === 0) {
@@ -217,6 +234,8 @@ async function loadConfig() {
 function renderConfig() {
   document.getElementById('backupDestination').value = currentConfig.backup_destination || '';
   document.getElementById('storeByGroup').value = String(Boolean(currentConfig.store_by_group));
+  document.getElementById('globalPreRun').value = currentConfig.hooks?.pre_run || '';
+  document.getElementById('globalPostRun').value = currentConfig.hooks?.post_run || '';
 
   renderHosts();
 
@@ -323,7 +342,10 @@ function hostIsInUse(hostName) {
 function containersUsingHost(hostName) {
   const used = [];
   const groups = currentConfig.groups || {};
-  for (const [groupName, containers] of Object.entries(groups)) {
+  for (const [groupName, groupValue] of Object.entries(groups)) {
+    const containers = Array.isArray(groupValue)
+      ? groupValue
+      : (groupValue && Array.isArray(groupValue.containers) ? groupValue.containers : []);
     for (const container of containers) {
       if ((container.host || 'local') === hostName) {
         used.push({ group: groupName, container: container.name || '(unnamed)' });
@@ -407,18 +429,20 @@ function buildGroupNode(groupName, containers) {
   fieldset.className = 'adb-group';
   fieldset.dataset.group = groupName;
 
+  const groupHooks = (containers && typeof containers === 'object' && !Array.isArray(containers) && containers.hooks) || {};
+
   const legend = document.createElement('legend');
   legend.innerHTML = `
     <span class="adb-group-toggle"></span>
     <i class="fa fa-folder-o adb-group-icon"></i>
     <input type="text" class="groupName" value="${escapeHtml(groupName)}" style="width:200px;" onchange="renameGroup(this)">
-    <span class="adb-group-count">${(containers || []).length} container${(containers || []).length === 1 ? '' : 's'}</span>
+    <span class="adb-group-count">${(Array.isArray(containers) ? containers : []).length} container${(Array.isArray(containers) ? containers : []).length === 1 ? '' : 's'}</span>
   `;
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.innerHTML = '<i class="fa fa-trash-o"></i> Remove Group';
   removeBtn.onclick = () => {
-    const count = (currentConfig.groups[groupName] || []).length;
+    const count = getGroupContainers(groupName).length;
     if (count > 0 && !confirm(`Remove group "${groupName}" and its ${count} container${count === 1 ? '' : 's'}?`)) {
       return;
     }
@@ -462,6 +486,32 @@ function buildGroupNode(groupName, containers) {
     validateContainerNames(fieldset);
   };
   body.appendChild(addBtn);
+
+  const hooksDiv = document.createElement('div');
+  hooksDiv.className = 'adb-hooks-group collapsed';
+  hooksDiv.title = "FAT32 filesystems (like /boot/config on Unraid flash) do not preserve Unix execute bits. Store hooks on a filesystem that supports permissions, or prefix the path with the interpreter (e.g., /bin/bash /boot/config/...).";
+  hooksDiv.innerHTML = `
+    <h4 class="adb-hooks-toggle"><i class="fa fa-chevron-right"></i> <i class="fa fa-code"></i> Group Hooks <i class="fa fa-question-circle adb-help-icon"></i></h4>
+    <div class="adb-hooks-body" style="display:none;">
+      <label>Pre-Group Script <input type="text" class="gPreGroup hookPath" value="${escapeHtml(groupHooks.pre_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-pre.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+      <label>Post-Group Script <input type="text" class="gPostGroup hookPath" value="${escapeHtml(groupHooks.post_group || '')}" placeholder="/boot/config/plugins/appdatasync/hooks/group-post.sh" autocomplete="off" spellcheck="false" style="width:360px;"></label>
+    </div>
+  `;
+  const hooksToggle = hooksDiv.querySelector('.adb-hooks-toggle');
+  hooksToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hooksDiv.classList.toggle('collapsed');
+    const body = hooksDiv.querySelector('.adb-hooks-body');
+    const icon = hooksToggle.querySelector('.fa-chevron-right, .fa-chevron-down');
+    if (hooksDiv.classList.contains('collapsed')) {
+      body.style.display = 'none';
+      if (icon) icon.className = 'fa fa-chevron-right';
+    } else {
+      body.style.display = 'block';
+      if (icon) icon.className = 'fa fa-chevron-down';
+    }
+  });
+  body.appendChild(hooksDiv);
 
   fieldset.appendChild(body);
 
@@ -678,7 +728,7 @@ function rebuildGroupsFromDom() {
   document.querySelectorAll('#groupsContainer fieldset').forEach(fs => {
     const groupName = fs.querySelector('.groupName')?.value.trim() || fs.dataset.group || 'unnamed';
     fs.dataset.group = groupName;
-    groups[groupName] = [];
+    const containers = [];
     fs.querySelectorAll('tbody tr.adb-container-main-row').forEach(tr => {
       const hostName = tr.querySelector('.cHost')?.value.trim() || 'local';
       const override = tr.querySelector('.cOverride')?.checked || false;
@@ -696,17 +746,35 @@ function rebuildGroupsFromDom() {
         container.ssh_key  = sshRow.querySelector('.cSshKey')?.value.trim() || '';
         container.ssh_port = parseInt(sshRow.querySelector('.cSshPort')?.value || '22', 10) || 22;
       }
-      groups[groupName].push(container);
+      containers.push(container);
     });
+
+    const hooks = {
+      pre_group:  fs.querySelector('.gPreGroup')?.value.trim() || '',
+      post_group: fs.querySelector('.gPostGroup')?.value.trim() || '',
+    };
+
+    if (hooks.pre_group || hooks.post_group) {
+      groups[groupName] = {
+        hooks: hooks,
+        containers: containers,
+      };
+    } else {
+      groups[groupName] = containers;
+    }
+
     // Update container count in legend
     const countEl = fs.querySelector('.adb-group-count');
     if (countEl) {
-      const count = groups[groupName].length;
-      countEl.textContent = `${count} container${count === 1 ? '' : 's'}`;
+      countEl.textContent = `${containers.length} container${containers.length === 1 ? '' : 's'}`;
     }
   });
   currentConfig.backup_destination = document.getElementById('backupDestination').value.trim();
   currentConfig.store_by_group     = document.getElementById('storeByGroup').value === 'true';
+  currentConfig.hooks = {
+    pre_run:  document.getElementById('globalPreRun').value.trim(),
+    post_run: document.getElementById('globalPostRun').value.trim(),
+  };
   currentConfig.groups             = groups;
 }
 
@@ -893,6 +961,38 @@ async function startJob(params, label) {
   }
 }
 
+async function cancelJob() {
+  const cancelBtn = document.getElementById('cancelJobBtn');
+  if (cancelBtn) {
+    cancelBtn.disabled = true;
+  }
+  try {
+    const data = await postJson(new URLSearchParams({
+      action:     'cancel_job',
+      csrf_token: CSRF_TOKEN,
+    }));
+    if (!data.success) {
+      showOutput('Cancel failed: ' + (data.message || 'unknown error'), true);
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+      }
+      return;
+    }
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    appendOutput('\nJob cancelled.');
+    setButtonsDisabled(false);
+    updateStatus();
+  } catch (e) {
+    showOutput('Cancel failed: ' + e.message, true);
+    if (cancelBtn) {
+      cancelBtn.disabled = false;
+    }
+  }
+}
+
 async function pollLog() {
   try {
     const data = await postJson(new URLSearchParams({
@@ -928,6 +1028,10 @@ function setButtonsDisabled(disabled) {
   ['backupAllBtn', 'backupGroupBtn', 'restoreGroupBtn', 'restoreContainerBtn'].forEach(id => {
     document.getElementById(id).disabled = disabled;
   });
+  const cancelBtn = document.getElementById('cancelJobBtn');
+  if (cancelBtn) {
+    cancelBtn.disabled = !disabled;
+  }
   if (disabled) {
     setStatusIcon('running');
   } else {
@@ -960,14 +1064,21 @@ async function updateStatus() {
       return;
     }
 
+    const cancelBtn = document.getElementById('cancelJobBtn');
     if (data.running) {
       badge.textContent = `Running (PID ${data.pid})`;
       badge.className = 'adb-status-badge running';
       setStatusIcon('running');
+      if (cancelBtn) {
+        cancelBtn.disabled = false;
+      }
     } else {
       badge.textContent = 'Idle';
       badge.className = 'adb-status-badge idle';
       setStatusIcon('idle');
+      if (cancelBtn) {
+        cancelBtn.disabled = true;
+      }
     }
 
     const parts = [];

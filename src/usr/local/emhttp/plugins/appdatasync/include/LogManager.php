@@ -150,7 +150,7 @@ final class LogManager
             return (int)$m[1] > 0;
         }
 
-        if (preg_match('/\b(CRITICAL|FAILED|rsync failed|Backup error|Restore error)\b/i', $log)) {
+        if (preg_match('/\b(CRITICAL|ERROR|FAILED|rsync failed|Backup error|Restore error)\b/i', $log)) {
             return true;
         }
 
