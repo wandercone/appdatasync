@@ -518,19 +518,28 @@ function updateHostDropdowns() {
   });
 }
 
-function buildGroupNode(groupName, containers) {
+function buildGroupNode(groupName, groupValue) {
   const fieldset = document.createElement('fieldset');
   fieldset.className = 'adb-group';
   fieldset.dataset.group = groupName;
 
-  const groupHooks = (containers && typeof containers === 'object' && !Array.isArray(containers) && containers.hooks) || {};
+  let containers;
+  let groupHooks = {};
+  if (Array.isArray(groupValue)) {
+    containers = groupValue;
+  } else if (groupValue && typeof groupValue === 'object' && Array.isArray(groupValue.containers)) {
+    containers = groupValue.containers;
+    groupHooks = groupValue.hooks || {};
+  } else {
+    containers = [];
+  }
 
   const legend = document.createElement('legend');
   legend.innerHTML = `
     <span class="adb-group-toggle"></span>
     <i class="fa fa-folder-o adb-group-icon"></i>
     <input type="text" class="groupName" value="${escapeHtml(groupName)}" style="width:200px;" onchange="renameGroup(this)">
-    <span class="adb-group-count">${(Array.isArray(containers) ? containers : []).length} container${(Array.isArray(containers) ? containers : []).length === 1 ? '' : 's'}</span>
+    <span class="adb-group-count">${containers.length} container${containers.length === 1 ? '' : 's'}</span>
   `;
   const nameInput = legend.querySelector('.groupName');
   if (nameInput) {
