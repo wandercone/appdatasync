@@ -17,6 +17,41 @@ An Unraid plugin that backs up, restores, and syncs Docker container appdata bet
 
 ---
 
+## How it differs from CA Appdata Backup / Restore
+
+AppdataSync is a narrower alternative that exists to scratch a different itch. 
+
+The main differences:
+
+- **Remote source hosts.** CA backs up containers running on the local Unraid box.
+  AppdataSync can also back up appdata from containers running on remote Docker
+  hosts, pulled over SSH via reusable host profiles (`rsync` over SSH). This is
+  the primary reason AppdataSync exists.
+- **Mirror vs. snapshots.** CA keeps dated, full tar snapshots with retention
+  by age, giving you point-in-time history to roll back to. AppdataSync keeps a
+  more live mirror (`--delete`) of each container's appdata plus an exported
+  `docker inspect` JSON config , i.e. the current state, not a history of past
+  runs. The rotating "last 5" history here refers to run logs/results, not backup
+  snapshots. If you need to restore a container to how it looked three days ago,
+  use CA; if you want a current, browsable copy of appdata, AppdataSync
+  fits better.
+- **Group + hook orchestration.** AppdataSync organizes containers into groups
+  with global (`pre_run` / `post_run`) and per-group (`pre_group` / `post_group`)
+  hooks that abort the run on non-zero exit. CA has its own per-container settings,
+  exclusions, and PreRun/PreBackup/PostBackup/PostRun scripts, a different, more
+  per-container model.
+- **Scope.** AppdataSync handles Docker appdata only. CA additionally backs
+  up your USB flash drive and VM/libvirt metadata.
+- **Backend.** AppdataSync is Python-based (see the Python requirement above);
+  CA is PHP/bash. Pick whichever matches what you already have provisioned.
+
+If you only back up local containers and want dated snapshots, CA is the safer
+choice. If you have containers spread across multiple hosts, want a current
+remote-mirror of their appdata, or prefer group/hook-driven orchestration,
+AppdataSync is worth a look.
+
+---
+
 ## Installation
 
 1. In the Unraid UI go to **Plugins > Install Plugin**
