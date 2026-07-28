@@ -5,8 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Settings.php';
 require_once __DIR__ . '/LogManager.php';
+require_once __DIR__ . '/JobState.php';
 
 use UnraidAppdataSync\Config;
+use UnraidAppdataSync\JobState;
 use UnraidAppdataSync\LogManager;
 use UnraidAppdataSync\Settings;
 
@@ -51,35 +53,40 @@ if ( ! ($settings['schedule_enabled'] ?? false)) {
     exit(0);
 }
 
-$python = 'python3';
-if (is_executable('/usr/bin/python3')) {
-    $python = '/usr/bin/python3';
-}
+$python = JobState::pythonBinary();
 
-$args           = '';
+$args           = [];
 $scheduleGroups = Settings::scheduleGroups($settings);
 if ($groups !== null && $groups !== '') {
-    $args .= ' --group ' . escapeshellarg($groups);
+    $args[] = '--group';
+    $args[] = $groups;
 } elseif ($scheduleGroups !== []) {
-    $args .= ' --group ' . escapeshellarg(implode(',', $scheduleGroups));
+    $args[] = '--group';
+    $args[] = implode(',', $scheduleGroups);
 }
 if ($dryRun) {
-    $args .= ' --dry-run';
+    $args[] = '--dry-run';
 }
 
 $logFile = LogManager::generatePath('backup');
+file_put_contents($logFile, '');
 LogManager::setCurrentLog($logFile);
 $startedAt = date('c');
 
-$env = 'APPDATA_BACKUP_CONFIG=' . escapeshellarg(Config::configPath()) . ' ';
-$cmd = sprintf(
-    '%s%s %s %s >> %s 2>&1',
-    $env,
-    escapeshellarg($python),
-    escapeshellarg('/usr/local/emhttp/plugins/appdatasync/backup.py'),
-    $args,
-    escapeshellarg($logFile)
-);
+$operationGroups = $groups !== null && $groups !== '' ? explode(',', $groups) : ($scheduleGroups === [] ? ['all'] : $scheduleGroups);
+
+JobState::saveJobState([
+    'running'     => true,
+    'pid'         => null,
+    'started_at'  => $startedAt,
+    'operation'   => 'Backup',
+    'groups'      => $operationGroups,
+    'dry_run'     => $dryRun,
+    'last_result' => null,
+]);
+
+$cmd = array_merge([$python, JobState::SCRIPT_PATH], $args);
+putenv('APPDATA_BACKUP_CONFIG=' . Config::configPath());
 
 function logToFile(string $path, string $message): void
 {
@@ -87,10 +94,42 @@ function logToFile(string $path, string $message): void
     file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
 }
 
-logToFile($logFile, 'Starting scheduled backup: ' . $cmd);
-exec($cmd, $output, $rc);
-logToFile($logFile, 'Scheduled backup finished with exit code ' . $rc);
+logToFile($logFile, 'Starting scheduled backup: ' . implode(' ', array_map('escapeshellarg', $cmd)));
+@unlink(JobState::PID_FILE);
 
-$operationGroups = $groups !== null && $groups !== '' ? explode(',', $groups) : ($scheduleGroups === [] ? ['all'] : $scheduleGroups);
-$result          = LogManager::finalizeRun($logFile, 'Backup', $operationGroups, $dryRun, $startedAt);
+$pipes   = [];
+$process = proc_open(
+    $cmd,
+    [
+        0 => ['pipe', 'r'],
+        1 => ['file', $logFile, 'a'],
+        2 => ['file', $logFile, 'a'],
+    ],
+    $pipes
+);
+
+if ( ! is_resource($process)) {
+    logToFile($logFile, 'Failed to start scheduled backup process.');
+    LogManager::finalizeRun($logFile, 'Backup', $operationGroups, $dryRun, $startedAt);
+    exit(1);
+}
+
+$status = proc_get_status($process);
+$pid    = $status['pid'];
+
+if ($pid > 0) {
+    file_put_contents(JobState::PID_FILE, (string)$pid);
+    JobState::saveJobState([
+        'running' => true,
+        'pid'     => $pid,
+    ]);
+}
+
+fclose($pipes[0]);
+$rc = proc_close($process);
+
+logToFile($logFile, 'Scheduled backup finished with exit code ' . $rc);
+@unlink(JobState::PID_FILE);
+
+$result = LogManager::finalizeRun($logFile, 'Backup', $operationGroups, $dryRun, $startedAt);
 exit($result === 'failed' ? 1 : $rc);

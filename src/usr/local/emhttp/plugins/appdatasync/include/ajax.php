@@ -5,8 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Settings.php';
 require_once __DIR__ . '/LogManager.php';
+require_once __DIR__ . '/JobState.php';
 
 use UnraidAppdataSync\Config;
+use UnraidAppdataSync\JobState;
 use UnraidAppdataSync\LogManager;
 use UnraidAppdataSync\Settings;
 
@@ -17,9 +19,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Method not allowed.']);
     exit;
 }
-
-const PID_FILE    = '/tmp/appdatasync.pid';
-const SCRIPT_PATH = '/usr/local/emhttp/plugins/appdatasync/backup.py';
 
 function postStr(string $key, string $default = ''): string
 {
@@ -34,42 +33,12 @@ function jsonResponse(bool $success, string $message): never
 }
 
 /**
- * @phpstan-impure
- */
-function isProcessRunning(int $pid): bool
-{
-    if ($pid <= 0) {
-        return false;
-    }
-
-    exec('kill -0 ' . $pid . ' 2>/dev/null', $out, $rc);
-    if ($rc !== 0) {
-        return false;
-    }
-
-    $cmdline = @file_get_contents('/proc/' . $pid . '/cmdline');
-    return $cmdline !== false && str_contains($cmdline, 'backup.py');
-}
-
-/**
- * @param array<string, mixed> $state
- */
-function saveJobState(array $state): void
-{
-    $full = Settings::loadState();
-    foreach ($state as $k => $v) {
-        $full[$k] = $v;
-    }
-    Settings::saveState($full);
-}
-
-/**
  * @param list<string>         $groups
  * @param array<string, string> $extraEnv
  */
 function startBackupJob(string $args, string $operation, array $groups, bool $dryRun, array $extraEnv = []): void
 {
-    $python = is_executable('/usr/bin/python3') ? '/usr/bin/python3' : 'python3';
+    $python = JobState::pythonBinary();
 
     foreach (array_merge(['APPDATA_BACKUP_CONFIG' => Config::configPath()], $extraEnv) as $k => $v) {
         putenv((string)$k . '=' . (string)$v);
@@ -77,12 +46,12 @@ function startBackupJob(string $args, string $operation, array $groups, bool $dr
 
     $logFile = LogManager::generatePath($operation);
     file_put_contents($logFile, '');
-    @unlink(PID_FILE);
+    @unlink(JobState::PID_FILE);
 
     $cmd = sprintf(
         'nohup %s %s %s > %s 2>&1 & echo $!',
         escapeshellarg($python),
-        escapeshellarg(SCRIPT_PATH),
+        escapeshellarg(JobState::SCRIPT_PATH),
         $args,
         escapeshellarg($logFile)
     );
@@ -96,9 +65,9 @@ function startBackupJob(string $args, string $operation, array $groups, bool $dr
         jsonResponse(false, 'Failed to start backup job.');
     }
 
-    file_put_contents(PID_FILE, (string)$pid);
+    file_put_contents(JobState::PID_FILE, (string)$pid);
     LogManager::setCurrentLog($logFile);
-    saveJobState([
+    JobState::saveJobState([
         'running'     => true,
         'pid'         => $pid,
         'started_at'  => date('c'),
@@ -184,7 +153,7 @@ switch ($action) {
         exit;
 
     case 'run_backup':
-        if (isProcessRunning((int)@file_get_contents(PID_FILE))) {
+        if (JobState::isProcessRunning((int)@file_get_contents(JobState::PID_FILE))) {
             jsonResponse(false, 'A backup job is already running.');
         }
 
@@ -207,7 +176,7 @@ switch ($action) {
 
         // no break
     case 'run_restore':
-        if (isProcessRunning((int)@file_get_contents(PID_FILE))) {
+        if (JobState::isProcessRunning((int)@file_get_contents(JobState::PID_FILE))) {
             jsonResponse(false, 'A backup job is already running.');
         }
 
@@ -230,7 +199,7 @@ switch ($action) {
 
         // no break
     case 'run_restore_container':
-        if (isProcessRunning((int)@file_get_contents(PID_FILE))) {
+        if (JobState::isProcessRunning((int)@file_get_contents(JobState::PID_FILE))) {
             jsonResponse(false, 'A backup job is already running.');
         }
 
@@ -262,8 +231,8 @@ switch ($action) {
                 $logFile = null;
             }
             $full    = ($logFile !== null) ? (string)file_get_contents($logFile) : '';
-            $pid     = (int)@file_get_contents(PID_FILE);
-            $running = $pid > 0 && isProcessRunning($pid);
+            $pid     = (int)@file_get_contents(JobState::PID_FILE);
+            $running = $pid > 0 && JobState::isProcessRunning($pid);
 
             $done   = ! $running && $pid > 0;
             $failed = $done      && LogManager::detectFailure($full);
@@ -277,7 +246,7 @@ switch ($action) {
                 $dryRun  = (bool)($state['dry_run'] ?? false);
                 $started = is_string($state['started_at'] ?? null) ? (string)$state['started_at'] : date('c');
                 LogManager::finalizeRun($logFile, $operation, $groups, $dryRun, $started);
-                @unlink(PID_FILE);
+                @unlink(JobState::PID_FILE);
             }
 
             echo json_encode([
@@ -296,8 +265,8 @@ switch ($action) {
     case 'job_status':
         try {
             $state   = Settings::loadState();
-            $pid     = (int)@file_get_contents(PID_FILE);
-            $running = $pid > 0 && isProcessRunning($pid);
+            $pid     = (int)@file_get_contents(JobState::PID_FILE);
+            $running = $pid > 0 && JobState::isProcessRunning($pid);
 
             echo json_encode([
                 'success'     => true,
@@ -313,9 +282,9 @@ switch ($action) {
 
     case 'cancel_job':
         try {
-            $pid = (int)@file_get_contents(PID_FILE);
-            if ($pid <= 0 || ! isProcessRunning($pid)) {
-                @unlink(PID_FILE);
+            $pid = (int)@file_get_contents(JobState::PID_FILE);
+            if ($pid <= 0 || ! JobState::isProcessRunning($pid)) {
+                @unlink(JobState::PID_FILE);
                 jsonResponse(false, 'No running job to cancel.');
             }
 
@@ -323,20 +292,20 @@ switch ($action) {
 
             $deadline = microtime(true) + 3.0;
             while (microtime(true) < $deadline) {
-                if ( ! isProcessRunning($pid)) {
+                if ( ! JobState::isProcessRunning($pid)) {
                     break;
                 }
                 usleep(100_000);
             }
 
-            if (isProcessRunning($pid)) {
+            if (JobState::isProcessRunning($pid)) {
                 posix_kill($pid, SIGKILL);
                 usleep(250_000);
             }
 
-            $stillRunning = isProcessRunning($pid);
+            $stillRunning = JobState::isProcessRunning($pid);
             if ( ! $stillRunning) {
-                @unlink(PID_FILE);
+                @unlink(JobState::PID_FILE);
                 $logFile = LogManager::currentLog();
                 if ($logFile !== null && is_file($logFile)) {
                     file_put_contents(
