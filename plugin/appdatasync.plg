@@ -4,7 +4,7 @@
 <PLUGIN
   name="appdatasync"
   author="wandercone"
-  version="2026.07.27_rc9"
+  version="2026.07.27_rc10"
   launch="Tools/AppdataSync"
   pluginURL="https://raw.githubusercontent.com/wandercone/appdatasync/main/plugin/appdatasync.plg"
   support="https://github.com/wandercone/appdatasync/issues"
@@ -16,6 +16,10 @@
 <CHANGES>
 <![CDATA[
 
+### 2026.07.27_rc10
+
+- chore: ensure cron runs are logged in status
+
 ### 2026.07.27_rc9
 
 - chore: fix layout
@@ -25,19 +29,14 @@
 - chore: fix pre/post backup restore functions
 - chore: fix restore container modal windows
 
-### 2026.07.27_rc7
-
-- chore: fix crash on group pre/post run script entered
-- chore: clean up rsync progress from making spam logs and output all to state.json when all backed up
-
 
 For older releases, see https://github.com/wandercone/appdatasync/releases
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.07.27_rc9-noarch-1.txz">
-<URL>https://github.com/wandercone/appdatasync/releases/download/2026.07.27_rc9/appdatasync-2026.07.27_rc9-noarch-1.txz</URL>
-<SHA256>8a129235551e370dfe811fba9e75878eb4f762afe4ddb557715b24bb8e75bd13</SHA256>
+<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.07.27_rc10-noarch-1.txz">
+<URL>https://github.com/wandercone/appdatasync/releases/download/2026.07.27_rc10/appdatasync-2026.07.27_rc10-noarch-1.txz</URL>
+<SHA256>9325a1a8860524563fc4858f0f36fb4d57b9af00f4ef92be707448c83f62dab2</SHA256>
 </FILE>
 
 <FILE Name="/boot/config/plugins/appdatasync/appdatasync.cron">
@@ -53,10 +52,10 @@ The 'install' script.
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
-upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.07.27_rc9-noarch-1.txz
+upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.07.27_rc10-noarch-1.txz
 
 # cleanup old versions
-rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.07.27_rc9')
+rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.07.27_rc10')
 
 # ensure plugin config directory exists on /boot so user config survives updates
 mkdir -p /boot/config/plugins/appdatasync
@@ -86,7 +85,7 @@ fi
 echo ""
 echo "----------------------------------------------------"
 echo " appdatasync has been installed."
-echo " Version: 2026.07.27_rc9"
+echo " Version: 2026.07.27_rc10"
 echo "----------------------------------------------------"
 echo ""
 ]]>
