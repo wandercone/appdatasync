@@ -30,10 +30,28 @@ After installation the plugin is available at **Tools > AppdataSync**.
 ## Requirements
 
 - Unraid 7.0.0 or later
-- Python 3.7 or later
 - Docker Engine on target hosts
 - `rsync` and `ssh` available on local and remote systems
-- Python packages: `docker`, `pyyaml` (colorlog is optional for colored terminal output)
+- Python packages: `docker`, `pyyaml` (`colorlog` is optional, for colored terminal output)
+
+### Python 3 (required as Unraid ships without it)
+
+Unraid does **not** include Python by default, and this plugin's install script
+will only `pip install` the dependencies above if a `python3` interpreter is
+already present (otherwise it prints a warning and the backend won't run). You
+must install a Python 3 provider plugin **before** installing AppdataSync.
+
+The recommended provider is desertwitch's **python-unRAID** (`dwpython`), which
+installs Python 3, pip, and setuptools as proper Unraid packages:
+
+1. In the Unraid UI go to **Plugins > Install Plugin**
+2. Paste the dwpython plugin URL:
+   `https://raw.githubusercontent.com/desertwitch/python-unRAID/main/plugin/dwpython.plg`
+3. Click **Install**, then accept the default backend (Python 3.11.x) or pick a
+   newer one (3.12 / 3.13 / 3.14) from its settings page
+
+AppdataSync is developed and tested against the Python versions shipped by
+dwpython (3.11+). Older interpreters may work but are not supported.
 
 ---
 
@@ -56,21 +74,41 @@ All container and host settings are managed through the web UI and stored in:
 /boot/config/plugins/appdatasync/config.yaml
 ```
 
+SSH credentials live in **host profiles** under `hosts:` and are inherited by any
+container that references the profile by `host:` name. The `local` host is always
+available and carries no SSH settings. To give a single container different SSH
+credentials from its host profile, set `ssh_override: yes` on the container and
+provide `ssh_user`, `ssh_key`, and `ssh_port` there.
+
 Example `config.yaml`:
 
 ```yaml
 backup_destination: /mnt/user/backup/appdata
 store_by_group: yes
+
+hosts:
+  - name: local
+  - name: my-server
+    ssh_user: userName
+    ssh_key: /mnt/user/system/keys/ssh_key
+    ssh_port: 22
+
 groups:
   group-1:
-    - name: container-a
+    - name: container-a          # local container
       host: local
       appdata_path: /mnt/user/appdata/container-a
       restart: yes
       start_delay: 10
+    - name: container-c          # remote container, inherits my-server SSH
+      host: my-server
+      appdata_path: /docker/container-c
+      restart: yes
 ```
 
-Remote containers add `ssh_user`, `ssh_key`, and `ssh_port`.
+Optional **hooks** (absolute script paths; a non-zero exit aborts the run and marks
+it failed) can be set globally as `hooks.pre_run` / `hooks.post_run`, and per group
+as `hooks.pre_group` / `hooks.post_group`.
 
 ---
 
