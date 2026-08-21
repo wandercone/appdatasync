@@ -6,7 +6,9 @@ require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Settings.php';
 require_once __DIR__ . '/LogManager.php';
 require_once __DIR__ . '/JobState.php';
+require_once __DIR__ . '/ArrayState.php';
 
+use UnraidAppdataSync\ArrayState;
 use UnraidAppdataSync\Config;
 use UnraidAppdataSync\JobState;
 use UnraidAppdataSync\LogManager;
@@ -38,6 +40,10 @@ function jsonResponse(bool $success, string $message): never
  */
 function startBackupJob(string $args, string $operation, array $groups, bool $dryRun, array $extraEnv = []): void
 {
+    if ( ! ArrayState::isStarted()) {
+        jsonResponse(false, 'The array is not started. Start the array before running a backup or restore.');
+    }
+
     $python = JobState::pythonBinary();
 
     foreach (array_merge(['APPDATA_BACKUP_CONFIG' => Config::configPath()], $extraEnv) as $k => $v) {

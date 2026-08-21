@@ -6,7 +6,9 @@ require_once __DIR__ . '/Config.php';
 require_once __DIR__ . '/Settings.php';
 require_once __DIR__ . '/LogManager.php';
 require_once __DIR__ . '/JobState.php';
+require_once __DIR__ . '/ArrayState.php';
 
+use UnraidAppdataSync\ArrayState;
 use UnraidAppdataSync\Config;
 use UnraidAppdataSync\JobState;
 use UnraidAppdataSync\LogManager;
@@ -49,6 +51,14 @@ if ( ! ($settings['schedule_enabled'] ?? false)) {
     LogManager::ensureDir();
     $logFile = LogManager::generatePath('backup');
     file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] Scheduled backups are disabled; exiting.\n");
+    LogManager::finalizeRun($logFile, 'Backup', Settings::scheduleGroups($settings), false, date('c'));
+    exit(0);
+}
+
+if ( ! ArrayState::isStarted()) {
+    LogManager::ensureDir();
+    $logFile = LogManager::generatePath('backup');
+    file_put_contents($logFile, "[" . date('Y-m-d H:i:s') . "] Array is not started; skipping scheduled backup.\n");
     LogManager::finalizeRun($logFile, 'Backup', Settings::scheduleGroups($settings), false, date('c'));
     exit(0);
 }

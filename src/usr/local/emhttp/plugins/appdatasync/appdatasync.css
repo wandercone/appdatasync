@@ -518,3 +518,29 @@
   #adbForm .fa-spin { animation: none !important; }
   #adbForm .adb-group legend .adb-group-toggle::before { transition: none; }
 }
+
+/* Array-not-started notice (rendered in place of the form when the array is down) */
+.adb-array-down {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 28px 24px;
+  text-align: center;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 6px;
+  background: var(--bg-color, #fff);
+}
+.adb-array-down i.fa {
+  font-size: 40px;
+  color: var(--orange, #ff9800);
+  margin-bottom: 12px;
+}
+.adb-array-down h2 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+}
+.adb-array-down p {
+  margin: 0;
+  color: var(--text-color, #666);
+  font-size: 13px;
+  line-height: 1.5;
+}

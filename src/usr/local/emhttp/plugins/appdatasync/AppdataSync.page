@@ -5,13 +5,15 @@ Tag="fa-exchange"
 <?php
 require_once '/usr/local/emhttp/plugins/dynamix/include/Helpers.php';
 
-$pluginName = 'appdatasync';
-$varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
+$pluginName   = 'appdatasync';
+$varIni       = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
+$arrayStarted = strtoupper((string)($varIni['mdState'] ?? '')) === 'STARTED';
 ?>
 
 <script src="<?= autov('/webGui/javascript/jquery.filetree.js'); ?>"></script>
 <link type="text/css" rel="stylesheet" href="<?= autov('/webGui/styles/jquery.filetree.css'); ?>">
 <link type="text/css" rel="stylesheet" href="/plugins/appdatasync/appdatasync.css">
+<?php if ($arrayStarted) { ?>
 <form id="adbForm">
 
 <table class="unraid tablesorter"><thead><tr><td><i class="fa fa-tachometer adb-section-icon"></i>Control Panel</td></tr></thead></table>
@@ -208,6 +210,13 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
 </div>
 
 </form>
+<?php } else { ?>
+<div class="adb-array-down">
+  <i class="fa fa-exclamation-triangle"></i>
+  <h2>Array is not started</h2>
+  <p>The Unraid array must be started before AppDataSync can back up or restore appdata. Start the array from the Main page, then reload this page.</p>
+</div>
+<?php } ?>
 
 <div id="adbModal" role="dialog" aria-modal="true" aria-labelledby="adbModalTitle">
   <div class="adb-modal-box" role="document">
@@ -223,6 +232,7 @@ $varIni     = parse_ini_file('/var/local/emhttp/var.ini') ?: [];
 <script>
 const CSRF_TOKEN = <?= json_encode($varIni['csrf_token'] ?? ''); ?>;
 const PLUGIN_NAME = <?= json_encode($pluginName); ?>;
+const ARRAY_STARTED = <?= json_encode($arrayStarted); ?>;
 function appdatasyncInitError(msg) {
   const badge = document.getElementById('adbStatusBadge');
   if (badge) {

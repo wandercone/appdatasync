@@ -77,6 +77,18 @@ def release_lock():
         pass
 
 
+def is_array_started():
+    """Return True if the Unraid array is started (mdState=STARTED in var.ini)."""
+    try:
+        with open('/var/local/emhttp/var.ini') as f:
+            for line in f:
+                if line.strip().startswith('mdState='):
+                    return line.strip().split('=', 1)[1].strip() == 'STARTED'
+    except OSError:
+        pass
+    return False
+
+
 def normalize_group(value):
     """Return (containers, hooks) from either a list or a dict with hooks + containers."""
     if isinstance(value, list):
@@ -541,6 +553,12 @@ def main():
         return 1
 
     try:
+        if not is_array_started():
+            logger.critical("The Unraid array is not started. Refusing to run.")
+            notify_host("Backup error", "The array is not started. Start the array and try again.", icon="alert")
+            logger.info("RESULT: failed")
+            return 1
+
         try:
             with open(args.config, 'r') as f:
                 config = yaml.safe_load(f)

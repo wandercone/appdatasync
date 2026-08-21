@@ -1447,6 +1447,9 @@ async function viewHistoryLog(filename) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  if (!ARRAY_STARTED) {
+    return;
+  }
   try {
     await loadConfig();
     await loadSchedule();
