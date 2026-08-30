@@ -106,8 +106,8 @@ switch ($action) {
             if ( ! in_array($runtime, ['docker', 'podman'], true)) {
                 $runtime = 'docker';
             }
-            $format  = escapeshellarg('{{.Names}}');
-            $psCmd   = $runtime === 'podman' ? 'podman ps --format ' : 'docker ps --format ';
+            $format = escapeshellarg('{{.Names}}');
+            $psCmd  = $runtime === 'podman' ? 'podman ps --format ' : 'docker ps --format ';
 
             if ($host === '' || $host === 'local') {
                 $output = shell_exec($psCmd . $format . ' 2>/dev/null');
