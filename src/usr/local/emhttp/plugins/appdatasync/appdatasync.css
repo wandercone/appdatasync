@@ -234,16 +234,56 @@
 }
 #adbForm .adb-host-table td:nth-child(1) { width: 20%; }
 #adbForm .adb-host-table td:nth-child(2) { width: 16%; }
-#adbForm .adb-host-table td:nth-child(3) { width: 46%; min-width: 140px; }
+#adbForm .adb-host-table td:nth-child(3) { width: 36%; min-width: 140px; }
 #adbForm .adb-host-table td:nth-child(4) { width: 10%; }
+#adbForm .adb-host-table td:nth-child(5) { width: 10%; }
 #adbForm .adb-host-table td.adb-host-actions { width: 8%; min-width: 44px; text-align: center; }
 #adbForm .adb-container-table td:nth-child(1) { width: 18%; }
 #adbForm .adb-container-table td:nth-child(2) { width: 10%; }
-#adbForm .adb-container-table td:nth-child(3) { width: 41%; min-width: 140px; }
-#adbForm .adb-container-table td:nth-child(4) { width: 7%; }
-#adbForm .adb-container-table td:nth-child(5) { width: 8%; }
-#adbForm .adb-container-table td:nth-child(6) { width: 10%; }
-#adbForm .adb-container-table td:nth-child(7) { width: 6%; min-width: 44px; text-align: center; }
+#adbForm .adb-container-table td:nth-child(3) { width: 9%; min-width: 90px; }
+#adbForm .adb-container-table td:nth-child(4) { width: 32%; min-width: 140px; }
+#adbForm .adb-container-table td:nth-child(5) { width: 7%; }
+#adbForm .adb-container-table td:nth-child(6) { width: 8%; }
+#adbForm .adb-container-table td:nth-child(7) { width: 10%; }
+#adbForm .adb-container-table td:nth-child(8) { width: 6%; min-width: 44px; text-align: center; }
+#adbForm .adb-runtime-cell {
+  white-space: nowrap;
+  text-align: left;
+  overflow: visible;
+}
+#adbForm .adb-runtime-cell .cRuntimeInherited,
+#adbForm .adb-runtime-cell select,
+#adbForm .adb-runtime-cell label {
+  display: inline-block;
+  vertical-align: middle;
+}
+#adbForm .cRuntimeInherited {
+  font-style: italic;
+  color: var(--gray, #888);
+  text-transform: capitalize;
+  margin-right: 3px;
+  max-width: 46px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#adbForm .cRuntime {
+  margin-right: 3px;
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+}
+#adbForm .adb-runtime-override {
+  font-size: 0.85em;
+  white-space: nowrap;
+  cursor: pointer;
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#adbForm .adb-runtime-override input {
+  margin-right: 2px;
+  vertical-align: middle;
+}
 #adbForm .adb-container-name {
   display: flex;
   align-items: center;

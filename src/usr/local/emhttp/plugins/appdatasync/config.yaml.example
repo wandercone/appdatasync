@@ -10,15 +10,16 @@ hooks:
   pre_run: /boot/config/plugins/appdatasync/hooks/pre-run.sh
   post_run: /boot/config/plugins/appdatasync/hooks/post-run.sh
 
-# Host profiles. SSH credentials defined here are inherited by containers unless
-# a container enables ssh_override. The "local" host is always available and has
-# no SSH settings.
+# Host profiles. SSH credentials and the default container runtime defined here
+# are inherited by containers unless a container enables ssh_override or sets its
+# own runtime. The "local" host is always available and has no SSH settings.
 hosts:
   - name: local
   - name: my-server
     ssh_user: userName
     ssh_key: /mnt/user/system/keys/ssh_key
     ssh_port: 22
+    runtime: docker  # Default runtime for containers on this host: docker or podman
 
 # Definition of backup groups
 groups:
@@ -37,11 +38,18 @@ groups:
       restart: yes  # Stop/Start the container for the backup operation
       start_delay: 10 # Wait (in seconds) before starting this container. Helpful if a dependent container needs time to init
 
-    # Second container in group-1
+    # Second container in group-1, inherits the host's runtime (docker by default)
     - name: container-b
       host: local
       appdata_path: /mnt/user/appdata/container-b
       restart: no
+
+    # Third container in group-1, overrides the host's default runtime
+    - name: container-e
+      host: local
+      runtime: podman  # Only needed when overriding the host's default runtime
+      appdata_path: /mnt/user/appdata/container-e
+      restart: yes
 
   group-2:
     # First container in group-2, hosted on the remote "my-server" host profile

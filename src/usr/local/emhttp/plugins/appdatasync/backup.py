@@ -51,9 +51,6 @@ logger.setLevel(logging.INFO)
 logger.addHandler(_handler)
 logger.propagate = False
 
-_docker_clients = {}
-
-
 def acquire_lock():
     """Write the current PID to LOCK_FILE. Returns False if another instance is already running."""
     if os.path.exists(LOCK_FILE):
@@ -82,11 +79,216 @@ def is_array_started():
     try:
         with open('/var/local/emhttp/var.ini') as f:
             for line in f:
-                if line.strip().startswith('mdState='):
-                    return line.strip().split('=', 1)[1].strip() == 'STARTED'
+                line = line.strip()
+                if line.startswith('mdState='):
+                    value = line.split('=', 1)[1].strip().strip('"\'').upper()
+                    return value == 'STARTED'
     except OSError:
         pass
     return False
+
+
+class ContainerRuntime:
+    """Abstract container runtime used by backup/restore operations."""
+
+    def ping(self):
+        raise NotImplementedError
+
+    def is_running(self, name):
+        raise NotImplementedError
+
+    def stop(self, name):
+        raise NotImplementedError
+
+    def start(self, name):
+        raise NotImplementedError
+
+    def inspect(self, name):
+        raise NotImplementedError
+
+
+class DockerRuntime(ContainerRuntime):
+    """Container runtime backed by the Docker Engine SDK."""
+
+    def __init__(self, host='local', timeout=30):
+        self.host = host
+        self.timeout = timeout
+        self._client = None
+
+    def _get_client(self):
+        if self._client is not None:
+            try:
+                self._client.ping()
+                return self._client
+            except Exception:
+                logger.warning(f"Cached Docker client for '{self.host}' is stale, reconnecting...")
+                self._client = None
+        try:
+            if self.host == 'local':
+                logger.debug("Connecting to local Docker engine...")
+                self._client = docker.from_env(timeout=self.timeout)
+            else:
+                remote_url = f'tcp://{self.host}:2375'
+                logger.debug(f"Connecting to remote Docker at {remote_url}...")
+                self._client = docker.DockerClient(base_url=remote_url, timeout=self.timeout)
+        except DockerException as e:
+            logger.error(f"Failed to connect to Docker on host '{self.host}': {e}")
+            raise
+        return self._client
+
+    def ping(self):
+        self._get_client().ping()
+
+    def is_running(self, name):
+        try:
+            container = self._get_client().containers.get(name)
+            return container.status == 'running'
+        except docker.errors.NotFound:
+            logger.warning(f"Container not found: {name}")
+            return False
+
+    def stop(self, name):
+        try:
+            self._get_client().containers.get(name).stop()
+            return True
+        except Exception as e:
+            logger.error(f"Error stopping {name}: {e}")
+            return False
+
+    def start(self, name):
+        try:
+            self._get_client().containers.get(name).start()
+            return True
+        except Exception as e:
+            logger.error(f"Error starting {name}: {e}")
+            return False
+
+    def inspect(self, name):
+        try:
+            return self._get_client().containers.get(name).attrs
+        except docker.errors.NotFound:
+            logger.warning(f"Container not found: {name}")
+            return None
+        except docker.errors.APIError as e:
+            logger.error(f"Failed to inspect container {name}: {e}")
+            return None
+
+
+class PodmanRuntime(ContainerRuntime):
+    """Container runtime backed by the Podman CLI (local or over SSH)."""
+
+    def __init__(self, host='local', ssh_user=None, ssh_key=None, ssh_port=22):
+        self.host = host
+        self.ssh_user = ssh_user
+        self.ssh_key = ssh_key
+        self.ssh_port = ssh_port
+
+    def _build_cmd(self, args):
+        if self.host == 'local':
+            return ['podman', *args]
+        cmd = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-p', str(self.ssh_port)]
+        if self.ssh_key:
+            cmd.extend(['-i', self.ssh_key])
+        target = f'{self.ssh_user}@{self.host}' if self.ssh_user else self.host
+        cmd.extend([target, 'podman', *args])
+        return cmd
+
+    def _run(self, args, **kwargs):
+        return subprocess.run(self._build_cmd(args), **kwargs)
+
+    def ping(self):
+        self._run(['version'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def is_running(self, name):
+        try:
+            result = self._run(
+                ['inspect', name, '--format', '{{.State.Status}}'],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            return result.stdout.strip().lower() == 'running'
+        except subprocess.CalledProcessError:
+            return False
+
+    def stop(self, name):
+        try:
+            self._run(['stop', name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error stopping {name}: {e}")
+            return False
+
+    def start(self, name):
+        try:
+            self._run(['start', name], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error starting {name}: {e}")
+            return False
+
+    def inspect(self, name):
+        try:
+            result = self._run(
+                ['inspect', name],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            data = json.loads(result.stdout)
+            if isinstance(data, list) and len(data) > 0:
+                return data[0]
+            return data
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to inspect container {name}: {e}")
+            return None
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse podman inspect output for {name}: {e}")
+            return None
+
+
+_runtime_cache = {}
+
+
+def _runtime_key(container):
+    """Return a cache key for the runtime described by a container config."""
+    host = container.get('host', 'local')
+    runtime = container.get('runtime', 'docker').lower()
+    ssh_user = container.get('ssh_user') or ''
+    ssh_key = container.get('ssh_key') or ''
+    ssh_port = container.get('ssh_port', 22)
+    return (runtime, host, ssh_user, ssh_key, ssh_port)
+
+
+def _make_runtime(container):
+    """Create a ContainerRuntime instance from a container config."""
+    host = container.get('host', 'local')
+    runtime_type = container.get('runtime', 'docker').lower()
+    if runtime_type == 'podman':
+        return PodmanRuntime(
+            host=host,
+            ssh_user=container.get('ssh_user'),
+            ssh_key=container.get('ssh_key'),
+            ssh_port=container.get('ssh_port', 22),
+        )
+    return DockerRuntime(host=host)
+
+
+def get_runtime(container):
+    """Return a cached, pinging ContainerRuntime for the given container config."""
+    key = _runtime_key(container)
+    if key in _runtime_cache:
+        runtime = _runtime_cache[key]
+        try:
+            runtime.ping()
+        except Exception:
+            logger.warning(f"Cached runtime for {key} is stale, reconnecting...")
+            del _runtime_cache[key]
+    if key not in _runtime_cache:
+        try:
+            runtime = _make_runtime(container)
+            runtime.ping()
+            _runtime_cache[key] = runtime
+        except Exception as e:
+            logger.critical(f"Could not create runtime for {key}: {e}")
+            return None
+    return _runtime_cache[key]
 
 
 def normalize_group(value):
@@ -223,7 +425,7 @@ def validate_remote_containers(config):
 
 
 def resolve_host_defaults(config):
-    """Return a copy of groups with host-level SSH defaults merged into each container.
+    """Merge host-level defaults (SSH and runtime) into each container.
 
     Containers keep their own ssh_* values only when ssh_override is enabled.
     The original config is modified in place for convenience.
@@ -232,55 +434,23 @@ def resolve_host_defaults(config):
     if 'local' not in hosts:
         hosts['local'] = {'name': 'local'}
 
-    for group_name, raw_group in config["groups"].items():
+    for _, raw_group in config["groups"].items():
         containers, _ = normalize_group(raw_group)
         for container in containers:
             host_name = container.get("host", "local")
-            if host_name == "local":
-                continue
-            host_def = hosts[host_name]
+            host_def = hosts.get(host_name, {'name': 'local'})
             override = container.get("ssh_override", False)
             if isinstance(override, str):
                 override = override.lower() in ['yes', 'true', '1']
-            if not override:
+            if host_name != "local" and not override:
                 if host_def.get("ssh_user") and not container.get("ssh_user"):
                     container["ssh_user"] = host_def["ssh_user"]
                 if host_def.get("ssh_key") and not container.get("ssh_key"):
                     container["ssh_key"] = host_def["ssh_key"]
                 if "ssh_port" in host_def and "ssh_port" not in container:
                     container["ssh_port"] = host_def["ssh_port"]
-
-
-def get_docker_client(host='local'):
-    """Return a cached Docker client for the given host, reconnecting if the cached client is stale."""
-    if host in _docker_clients:
-        try:
-            _docker_clients[host].ping()
-        except Exception:
-            logger.warning(f"Cached Docker client for '{host}' is stale, reconnecting...")
-            del _docker_clients[host]
-    if host not in _docker_clients:
-        client = set_docker_client(host)
-        if client is None:
-            logger.critical(f"Could not create Docker client for host: {host}")
-            return None
-        _docker_clients[host] = client
-    return _docker_clients[host]
-
-
-def set_docker_client(host='local', timeout=30):
-    """Create and return a new Docker client. Uses the local socket for 'local', tcp://host:2375 otherwise."""
-    try:
-        if host == 'local':
-            logger.debug("Connecting to local Docker engine...")
-            return docker.from_env(timeout=timeout)
-        else:
-            remote_docker_url = f'tcp://{host}:2375'
-            logger.debug(f"Connecting to remote Docker at {remote_docker_url} with timeout={timeout}s...")
-            return docker.DockerClient(base_url=remote_docker_url, timeout=timeout)
-    except DockerException as e:
-        logger.error(f"Failed to connect to Docker on host '{host}': {e}")
-        return None
+            if host_def.get("runtime") and "runtime" not in container:
+                container["runtime"] = host_def["runtime"]
 
 
 def remote_path_exists(host, ssh_user, ssh_key, ssh_port, remote_path):
@@ -297,48 +467,37 @@ def remote_path_exists(host, ssh_user, ssh_key, ssh_port, remote_path):
         return False
 
 
-def is_container_running(container_id, host, docker_client):
+def is_container_running(container_id, runtime):
     """Return True if the named container is in the 'running' state."""
-    try:
-        container = docker_client.containers.get(container_id)
-        return container.status == 'running'
-    except docker.errors.NotFound:
-        logger.warning(f"Container not found: {container_id}")
-        return False
+    return runtime.is_running(container_id)
 
 
-def stop_container(container_id, docker_client, host, dry_run=False):
+def stop_container(container_id, runtime, host, dry_run=False):
     """Stop a running container. Sends an Unraid notification on failure. Returns True on success."""
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}Stopping container: {container_id} on {host}")
     if dry_run:
         return True
-    try:
-        container = docker_client.containers.get(container_id)
-        container.stop()
+    if runtime.stop(container_id):
         return True
-    except Exception as e:
-        sub = f"Error stopping {container_id}"
-        msg = f"{e}"
-        notify_host(sub, msg, icon="alert", dry_run=dry_run)
-        logger.error(msg)
-        return False
+    sub = f"Error stopping {container_id}"
+    msg = f"Could not stop {container_id} on {host}"
+    notify_host(sub, msg, icon="alert", dry_run=dry_run)
+    logger.error(msg)
+    return False
 
 
-def start_container(container_id, docker_client, host, dry_run=False):
+def start_container(container_id, runtime, host, dry_run=False):
     """Start a stopped container. Sends an Unraid notification on failure. Returns True on success."""
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}Starting container: {container_id} on {host}")
     if dry_run:
         return True
-    try:
-        container = docker_client.containers.get(container_id)
-        container.start()
+    if runtime.start(container_id):
         return True
-    except Exception as e:
-        sub = f"Error starting {container_id}"
-        msg = f"{e}"
-        notify_host(sub, msg, icon="alert", dry_run=dry_run)
-        logger.error(msg)
-        return False
+    sub = f"Error starting {container_id}"
+    msg = f"Could not start {container_id} on {host}"
+    notify_host(sub, msg, icon="alert", dry_run=dry_run)
+    logger.error(msg)
+    return False
 
 
 def rsync_info_flags():
@@ -483,30 +642,29 @@ def restore_container_appdata(backup_root, container_id, dest_path, host, ssh_us
         return False
 
 
-def backup_container_json(container_id, backup_root, docker_client, host, dry_run=False):
-    """Export a container's full config (docker inspect) to backup_root/container_id.json.
+def backup_container_json(container_id, backup_root, runtime, host, dry_run=False):
+    """Export a container's full config (docker/podman inspect) to backup_root/container_id.json.
 
     Returns True on success or if the container is not found (JSON is skipped but the
-    appdata backup can still proceed). Returns False only on a Docker API error.
+    appdata backup can still proceed). Returns False only on a runtime API/CLI error.
     """
     json_path = Path(backup_root) / f"{container_id}.json"
     logger.info(f"{'- DRY RUN -  ' if dry_run else ''}Saving container config to {json_path}")
     if dry_run:
         logger.info(f"- DRY RUN - Would write JSON config to {json_path}")
         return True
+    config_data = runtime.inspect(container_id)
+    if config_data is None:
+        logger.warning(f"Container {container_id} not found on {host}, skipping JSON backup.")
+        return True
     try:
-        container = docker_client.containers.get(container_id)
-        config_data = container.attrs
         with json_path.open('w') as f:
             json.dump(config_data, f, indent=2)
         logger.info(f"Saved config for {container_id} to {json_path}")
         return True
-    except docker.errors.NotFound:
-        logger.warning(f"Container {container_id} not found on {host}, skipping JSON backup.")
-        return True
-    except docker.errors.APIError as e:
+    except Exception as e:
         sub = f"Backup error"
-        msg = f"Failed to inspect container {container_id}: {e}"
+        msg = f"Failed to write container config {container_id}: {e}"
         notify_host(sub, msg, icon="alert", dry_run=dry_run)
         logger.error(msg)
         return False
@@ -530,7 +688,7 @@ def notify_host(subject, message, icon, dry_run=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Unraid docker appdata backup tool")
+    parser = argparse.ArgumentParser(description="Unraid Docker/Podman appdata backup tool")
     parser.add_argument("--group", type=str, help="Name of the group to back up (defaults to all groups)")
     parser.add_argument("--restore", action="store_true", help="Perform a restore operation (defaults to all groups)")
     parser.add_argument("--restore-group", type=str, help="Perform the restore of a specific group")
@@ -667,10 +825,10 @@ def main():
                     ssh_key = container.get("ssh_key")
                     ssh_port = container.get("ssh_port", 22)
                     appdata_path = container.get("appdata_path")
-                    client = get_docker_client(host)
-                    if client is None:
-                        logger.error(f"Container {container_id} failed due to Docker connection issue on {host}")
-                        summary[(container_id, host)] = [container_id, host, 'failed', 'Docker connection failed']
+                    runtime = get_runtime(container)
+                    if runtime is None:
+                        logger.error(f"Container {container_id} failed due to runtime connection issue on {host}")
+                        summary[(container_id, host)] = [container_id, host, 'failed', 'Runtime connection failed']
                         continue
                     if args.restore_container and container_id != args.restore_container:
                         continue
@@ -679,10 +837,10 @@ def main():
                     status = 'ok'
                     detail = ''
 
-                    was_running = is_container_running(container_id, host, client)
+                    was_running = is_container_running(container_id, runtime)
                     stopped = False
                     if was_running:
-                        stopped = stop_container(container_id, client, host, dry_run=args.dry_run)
+                        stopped = stop_container(container_id, runtime, host, dry_run=args.dry_run)
 
                     if stopped:
                         stopped_containers.add((container_id, host))
@@ -707,7 +865,7 @@ def main():
                             notify_host("Restore error", str(e), icon="alert", dry_run=args.dry_run)
 
                     if (container_id, host) in stopped_containers:
-                        if not start_container(container_id, client, host, dry_run=args.dry_run):
+                        if not start_container(container_id, runtime, host, dry_run=args.dry_run):
                             status = 'failed'
                             detail = 'start failed'
 
@@ -758,16 +916,16 @@ def main():
             for container in containers:
                 container_id = container["name"]
                 host = container.get("host", "local")
-                client = get_docker_client(host)
-                if client is None:
-                    logger.error(f"Skipping container {container_id} due to Docker connection issue on {host}")
+                runtime = get_runtime(container)
+                if runtime is None:
+                    logger.error(f"Skipping container {container_id} due to runtime connection issue on {host}")
                     stop_failed.add(container_id)
                     continue
                 restart_value = container.get("restart", False)
                 should_restart = str(restart_value).lower() == "yes" if isinstance(restart_value, str) else bool(restart_value)
 
-                if should_restart and is_container_running(container_id, host, client):
-                    if stop_container(container_id, client, host, dry_run=args.dry_run):
+                if should_restart and is_container_running(container_id, runtime):
+                    if stop_container(container_id, runtime, host, dry_run=args.dry_run):
                         containers_to_restart.append(container_id)
                     else:
                         logger.error(f"Could not stop {container_id} on {host}; it will be skipped")
@@ -784,10 +942,10 @@ def main():
                 ssh_user = container.get("ssh_user")
                 ssh_key = container.get("ssh_key")
                 ssh_port = container.get("ssh_port", 22)
-                client = get_docker_client(host)
-                if client is None:
-                    logger.error(f"Container {container_id} failed due to Docker connection issue on {host}")
-                    summary[(container_id, host)] = [container_id, host, 'failed', 'Docker connection failed']
+                runtime = get_runtime(container)
+                if runtime is None:
+                    logger.error(f"Container {container_id} failed due to runtime connection issue on {host}")
+                    summary[(container_id, host)] = [container_id, host, 'failed', 'Runtime connection failed']
                     continue
 
                 if container_id in stop_failed:
@@ -798,7 +956,7 @@ def main():
                 detail = ''
                 source_path = container.get("appdata_path")
 
-                if not backup_container_json(container_id, backup_root, client, host, dry_run=args.dry_run):
+                if not backup_container_json(container_id, backup_root, runtime, host, dry_run=args.dry_run):
                     status = 'failed'
                     detail = 'JSON backup failed'
 
@@ -828,9 +986,9 @@ def main():
             for container_id in reversed(containers_to_restart):
                 container_cfg = next((c for c in containers if c["name"] == container_id), {})
                 host = container_cfg.get("host", "local")
-                restart_client = get_docker_client(host)
-                if restart_client is None:
-                    logger.error(f"Skipping restart of container {container_id} due to Docker connection issue on {host}")
+                restart_runtime = get_runtime(container_cfg)
+                if restart_runtime is None:
+                    logger.error(f"Skipping restart of container {container_id} due to runtime connection issue on {host}")
                     if (container_id, host) in summary:
                         summary[(container_id, host)][2] = 'failed'
                         summary[(container_id, host)][3] = 'restart connection failed'
@@ -840,7 +998,7 @@ def main():
                     logger.info(f"Waiting {delay} seconds before starting {container_id} on {host}")
                     if not args.dry_run:
                         time.sleep(delay)
-                if not start_container(container_id, restart_client, host, dry_run=args.dry_run):
+                if not start_container(container_id, restart_runtime, host, dry_run=args.dry_run):
                     if (container_id, host) in summary:
                         summary[(container_id, host)][2] = 'failed'
                         summary[(container_id, host)][3] = 'start failed'

@@ -90,6 +90,10 @@ final class Config
                         return ['success' => false, 'message' => "Host '{$hostName}' has an invalid ssh_port."];
                     }
                 }
+                $runtime = self::string($host, 'runtime', 'docker');
+                if ($runtime !== '' && ! in_array($runtime, ['docker', 'podman'], true)) {
+                    return ['success' => false, 'message' => "Host '{$hostName}' has an invalid runtime (must be 'docker' or 'podman')."];
+                }
             }
         }
         if ( ! isset($hosts['local'])) {
@@ -179,6 +183,10 @@ final class Config
                 $delay = self::int($container, 'start_delay', 0);
                 if ($delay < 0) {
                     return ['success' => false, 'message' => "Container '{$name}' has a negative start_delay."];
+                }
+                $containerRuntime = self::string($container, 'runtime', '');
+                if ($containerRuntime !== '' && ! in_array($containerRuntime, ['docker', 'podman'], true)) {
+                    return ['success' => false, 'message' => "Container '{$name}' has an invalid runtime (must be 'docker' or 'podman')."];
                 }
             }
         }

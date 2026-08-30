@@ -1,6 +1,6 @@
 # AppdataSync
 
-An Unraid plugin that backs up, restores, and syncs Docker container appdata between local and remote hosts through the Unraid web UI. 
+An Unraid plugin that backs up, restores, and syncs Docker and Podman container appdata between local and remote hosts through the Unraid web UI. 
 
 ---
 
@@ -13,7 +13,8 @@ An Unraid plugin that backs up, restores, and syncs Docker container appdata bet
 - **Local and remote host support** using `rsync` over SSH
 - **Live log tail** while jobs run
 - **Rotating run history** keeps the last 5 logs and results
-- **Container config export** (`docker inspect` JSON) alongside appdata
+- **Container config export** (`docker inspect` or `podman inspect` JSON) alongside appdata
+- **Docker and Podman support** with a per-container/per-host runtime selector
 
 ---
 
@@ -40,7 +41,7 @@ The main differences:
   hooks that abort the run on non-zero exit. CA has its own per-container settings,
   exclusions, and PreRun/PreBackup/PostBackup/PostRun scripts, a different, more
   per-container model.
-- **Scope.** AppdataSync handles Docker appdata only. CA additionally backs
+- **Scope.** AppdataSync handles Docker and Podman appdata. CA additionally backs
   up your USB flash drive and VM/libvirt metadata.
 - **Backend.** AppdataSync is Python-based (see the Python requirement above);
   CA is PHP/bash. Pick whichever matches what you already have provisioned.
@@ -65,9 +66,10 @@ After installation the plugin is available at **Tools > AppdataSync**.
 ## Requirements
 
 - Unraid 7.0.0 or later
-- Docker Engine on target hosts
+- Docker Engine **or** Podman on target hosts
 - `rsync` and `ssh` available on local and remote systems
 - Python packages: `docker`, `pyyaml` (`colorlog` is optional, for colored terminal output)
+  - The `podman` CLI is used directly for Podman containers, so no extra Python package is needed
 
 ### Python 3 (required as Unraid ships without it)
 
@@ -109,11 +111,13 @@ All container and host settings are managed through the web UI and stored in:
 /boot/config/plugins/appdatasync/config.yaml
 ```
 
-SSH credentials live in **host profiles** under `hosts:` and are inherited by any
-container that references the profile by `host:` name. The `local` host is always
-available and carries no SSH settings. To give a single container different SSH
-credentials from its host profile, set `ssh_override: yes` on the container and
-provide `ssh_user`, `ssh_key`, and `ssh_port` there.
+SSH credentials and the default container **runtime** (`docker` or `podman`) live
+in **host profiles** under `hosts:` and are inherited by any container that references
+the profile by `host:` name. The `local` host is always available and carries no SSH
+settings. To give a single container different SSH credentials from its host profile,
+set `ssh_override: yes` on the container and provide `ssh_user`, `ssh_key`, and
+`ssh_port` there. A container can also override the host's runtime with its own
+`runtime:` field.
 
 Example `config.yaml`:
 
@@ -127,19 +131,26 @@ hosts:
     ssh_user: userName
     ssh_key: /mnt/user/system/keys/ssh_key
     ssh_port: 22
+    runtime: podman              # default runtime for containers on this host
 
 groups:
   group-1:
-    - name: container-a          # local container
+    - name: container-a          # local Docker container
       host: local
       appdata_path: /mnt/user/appdata/container-a
       restart: yes
       start_delay: 10
-    - name: container-c          # remote container, inherits my-server SSH
+    - name: container-c          # remote Podman container, inherits my-server SSH
       host: my-server
+      runtime: podman
       appdata_path: /docker/container-c
       restart: yes
 ```
+
+**Note on rootless Podman:** rootless Podman containers are visible only to the user
+that owns them. Make sure the `ssh_user` on the remote host (or the local user running
+the plugin) matches the Podman user, otherwise the container list and stop/start
+operations will be empty or fail.
 
 Optional **hooks** (absolute script paths; a non-zero exit aborts the run and marks
 it failed) can be set globally as `hooks.pre_run` / `hooks.post_run`, and per group

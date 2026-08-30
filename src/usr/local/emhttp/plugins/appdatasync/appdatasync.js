@@ -389,6 +389,7 @@ function renderHosts() {
         <td>SSH User</td>
         <td>SSH Key</td>
         <td>SSH Port</td>
+        <td>Runtime</td>
         <td class="adb-host-actions"></td>
       </tr>
     </thead>
@@ -412,6 +413,12 @@ function buildHostRow(host) {
     <td><input type="text" class="hSshUser" value="${escapeHtml(host.ssh_user || '')}" ${isLocal ? 'disabled' : ''} onchange="rebuildHostsFromDom();" style="${isLocal ? 'opacity:0.6;' : ''}"></td>
     <td><input type="text" class="hSshKey" value="${escapeHtml(sshKey)}" title="${escapeHtml(sshKey)}" ${isLocal ? 'disabled' : ''} onchange="rebuildHostsFromDom();" style="${isLocal ? 'opacity:0.6;' : ''}"></td>
     <td><input type="number" class="hSshPort" value="${parseInt(host.ssh_port || 22, 10)}" min="1" max="65535" ${isLocal ? 'disabled' : ''} onchange="rebuildHostsFromDom();" style="${isLocal ? 'opacity:0.6;' : ''}"></td>
+    <td>
+      <select class="hRuntime" onchange="rebuildHostsFromDom();" ${isLocal ? 'disabled' : ''} style="${isLocal ? 'opacity:0.6;' : ''}">
+        <option value="docker" ${(host.runtime || 'docker') === 'docker' ? 'selected' : ''}>Docker</option>
+        <option value="podman" ${(host.runtime || 'docker') === 'podman' ? 'selected' : ''}>Podman</option>
+      </select>
+    </td>
     <td class="adb-host-actions"></td>
   `;
   if (!isLocal) {
@@ -514,6 +521,7 @@ function rebuildHostsFromDom() {
       ssh_user: tr.querySelector('.hSshUser')?.value.trim() || '',
       ssh_key: tr.querySelector('.hSshKey')?.value.trim() || '',
       ssh_port: parseInt(tr.querySelector('.hSshPort')?.value || '22', 10) || 22,
+      runtime: tr.querySelector('.hRuntime')?.value || 'docker',
     });
   });
   currentConfig.hosts = hosts;
@@ -584,6 +592,7 @@ function buildGroupNode(groupName, groupValue) {
       <tr>
         <td>Container</td>
         <td>Host</td>
+        <td>Runtime</td>
         <td>Appdata Path</td>
         <td>Restart</td>
         <td>Start Delay</td>
@@ -657,7 +666,10 @@ function buildGroupNode(groupName, groupValue) {
 
 function buildContainerRow(container) {
   const hostName = container.host || 'local';
-  const override = Boolean(container.ssh_override);
+  const sshOverride = Boolean(container.ssh_override);
+  const runtimeOverride = container.runtime !== undefined && container.runtime !== '';
+  const hostRuntime = getHostProfile(hostName)?.runtime || 'docker';
+  const containerRuntime = container.runtime || hostRuntime;
 
   const mainRow = document.createElement('tr');
   mainRow.className = 'adb-container-main-row';
@@ -674,10 +686,18 @@ function buildContainerRow(container) {
         ${buildHostOptions(hostName)}
       </select>
     </td>
+    <td class="adb-runtime-cell">
+      <span class="cRuntimeInherited">${escapeHtml(hostRuntime)}</span>
+      <select class="cRuntime" style="display:none;" onchange="rebuildGroupsFromDom();">
+        <option value="docker" ${containerRuntime === 'docker' ? 'selected' : ''}>Docker</option>
+        <option value="podman" ${containerRuntime === 'podman' ? 'selected' : ''}>Podman</option>
+      </select>
+      <label class="adb-runtime-override" title="Override the host's default runtime for this container"><input type="checkbox" class="cRuntimeOverride" ${runtimeOverride ? 'checked' : ''} onchange="updateRuntimeFields(this.closest('tr'))"> override</label>
+    </td>
     <td><input type="text" class="cPath" value="${escapeHtml(container.appdata_path || '')}" placeholder="/mnt/user/appdata/…" autocomplete="off" spellcheck="false"></td>
     <td><select class="cRestart"><option value="true" ${(container.restart ?? true) ? 'selected' : ''}>Yes</option><option value="false" ${!(container.restart ?? true) ? 'selected' : ''}>No</option></select></td>
     <td><input type="number" class="cDelay" value="${parseInt(container.start_delay || 0, 10)}" min="0"></td>
-    <td class="adb-override-cell"><label class="adb-override" title="Use per-container SSH settings instead of the host profile"><input type="checkbox" class="cOverride" ${override ? 'checked' : ''} onchange="updateHostFields(this.closest('tr'))"> override</label><span class="adb-override-na" title="Only used for remote hosts">—</span></td>
+    <td class="adb-override-cell"><label class="adb-override" title="Use per-container SSH settings instead of the host profile"><input type="checkbox" class="cOverride" ${sshOverride ? 'checked' : ''} onchange="updateHostFields(this.closest('tr'))"> override</label><span class="adb-override-na" title="Only used for remote hosts">—</span></td>
     <td class="cActions"></td>
   `;
 
@@ -764,6 +784,25 @@ function updateHostFields(tr) {
     const cb = tr.querySelector('.cOverride');
     if (cb) cb.checked = false;
   }
+  updateRuntimeFields(tr);
+}
+
+function updateRuntimeFields(tr) {
+  const hostName = tr.querySelector('.cHost')?.value || 'local';
+  const hostRuntime = getHostProfile(hostName)?.runtime || 'docker';
+  const override = tr.querySelector('.cRuntimeOverride')?.checked || false;
+  const inheritedSpan = tr.querySelector('.cRuntimeInherited');
+  const runtimeSelect = tr.querySelector('.cRuntime');
+  if (inheritedSpan) {
+    inheritedSpan.textContent = hostRuntime;
+    inheritedSpan.style.display = override ? 'none' : '';
+  }
+  if (runtimeSelect) {
+    runtimeSelect.style.display = override ? '' : 'none';
+    if (override && runtimeSelect.value !== 'docker' && runtimeSelect.value !== 'podman') {
+      runtimeSelect.value = hostRuntime;
+    }
+  }
 }
 
 function getHostProfile(name) {
@@ -777,7 +816,11 @@ async function pickRunningContainer(tr) {
   const sshRow = tr._sshRow;
   const nameInput = tr.querySelector('.cName');
 
-  const params = new URLSearchParams({ action: 'get_containers', csrf_token: CSRF_TOKEN, host: hostName });
+  const runtimeOverride = tr.querySelector('.cRuntimeOverride')?.checked || false;
+  const runtime = runtimeOverride
+    ? (tr.querySelector('.cRuntime')?.value || 'docker')
+    : (getHostProfile(hostName)?.runtime || 'docker');
+  const params = new URLSearchParams({ action: 'get_containers', csrf_token: CSRF_TOKEN, host: hostName, runtime: runtime });
   if (!isLocal) {
     const profile = getHostProfile(hostName) || {};
     params.set('ssh_user', override ? (sshRow?.querySelector('.cSshUser')?.value.trim() || '') : (profile.ssh_user || ''));
@@ -874,6 +917,7 @@ function rebuildGroupsFromDom() {
     fs.querySelectorAll('tbody tr.adb-container-main-row').forEach(tr => {
       const hostName = tr.querySelector('.cHost')?.value.trim() || 'local';
       const override = tr.querySelector('.cOverride')?.checked || false;
+      const runtimeOverride = tr.querySelector('.cRuntimeOverride')?.checked || false;
       const sshRow = tr._sshRow;
       const container = {
         name:         tr.querySelector('.cName')?.value.trim() || '',
@@ -882,6 +926,9 @@ function rebuildGroupsFromDom() {
         restart:      tr.querySelector('.cRestart')?.value === 'true',
         start_delay:  parseInt(tr.querySelector('.cDelay')?.value || '0', 10) || 0,
       };
+      if (runtimeOverride) {
+        container.runtime = tr.querySelector('.cRuntime')?.value || 'docker';
+      }
       if (hostName !== 'local' && override && sshRow) {
         container.ssh_override = true;
         container.ssh_user = sshRow.querySelector('.cSshUser')?.value.trim() || '';

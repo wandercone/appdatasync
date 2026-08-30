@@ -101,11 +101,16 @@ switch ($action) {
 
     case 'get_containers':
         try {
-            $host   = postStr('host', 'local');
-            $format = escapeshellarg('{{.Names}}');
+            $host    = postStr('host', 'local');
+            $runtime = postStr('runtime', 'docker');
+            if ( ! in_array($runtime, ['docker', 'podman'], true)) {
+                $runtime = 'docker';
+            }
+            $format  = escapeshellarg('{{.Names}}');
+            $psCmd   = $runtime === 'podman' ? 'podman ps --format ' : 'docker ps --format ';
 
             if ($host === '' || $host === 'local') {
-                $output = shell_exec("docker ps --format {$format} 2>/dev/null");
+                $output = shell_exec($psCmd . $format . ' 2>/dev/null');
             } else {
                 $sshUser = postStr('ssh_user');
                 $sshKey  = postStr('ssh_key');
@@ -119,7 +124,7 @@ switch ($action) {
                 if ($sshUser !== '') {
                     $target = $sshUser . '@' . $host;
                 }
-                $cmd .= ' ' . escapeshellarg($target) . ' docker ps --format ' . $format . ' 2>/dev/null';
+                $cmd .= ' ' . escapeshellarg($target) . ' ' . $psCmd . $format . ' 2>/dev/null';
                 $output = shell_exec($cmd);
             }
 
