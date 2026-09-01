@@ -15,6 +15,7 @@ An Unraid plugin that backs up, restores, and syncs Docker and Podman container 
 - **Rotating run history** keeps the last 5 logs and results
 - **Container config export** (`docker inspect` or `podman inspect` JSON) alongside appdata
 - **Docker and Podman support** with a per-container/per-host runtime selector
+- **Quadlet/systemd auto-detection** containers managed by a systemd service unit are stopped/started via `systemctl`, falling back to Docker/Podman direct commands otherwise
 
 ---
 
@@ -151,6 +152,13 @@ groups:
 that owns them. Make sure the `ssh_user` on the remote host (or the local user running
 the plugin) matches the Podman user, otherwise the container list and stop/start
 operations will be empty or fail.
+
+**Note on Quadlets and systemd-managed containers:** if a container has a matching
+systemd service unit (e.g. `mycontainer.service` from a `mycontainer.container` Quadlet
+or a custom unit), AppdataSync automatically uses `systemctl` for stop/start/status.
+The `inspect` export still uses the configured runtime (`podman inspect`/`docker inspect`).
+No extra configuration is required; set `runtime: podman` as usual and keep the
+container name matching the systemd unit name.
 
 Optional **hooks** (absolute script paths; a non-zero exit aborts the run and marks
 it failed) can be set globally as `hooks.pre_run` / `hooks.post_run`, and per group

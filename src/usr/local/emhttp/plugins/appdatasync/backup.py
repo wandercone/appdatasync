@@ -243,7 +243,121 @@ class PodmanRuntime(ContainerRuntime):
             return None
 
 
+class SystemdRuntime(ContainerRuntime):
+    """Prefer systemd (systemctl) for lifecycle when a matching unit exists.
+
+    Quadlet containers are managed by systemd rather than podman directly.
+    This wrapper detects a systemd service unit named ``<container>.service``
+    in either the user or system bus and delegates stop/start/status to
+    ``systemctl``.  When no matching unit exists it falls back to the base
+    runtime (Docker or Podman).  Inspect always goes through the base runtime
+    so the exported container JSON is still produced by ``podman/docker inspect``.
+    """
+
+    def __init__(self, base_runtime, container_name, host='local', ssh_user=None, ssh_key=None, ssh_port=22):
+        self.base = base_runtime
+        self.name = container_name
+        self.host = host
+        self.ssh_user = ssh_user
+        self.ssh_key = ssh_key
+        self.ssh_port = ssh_port
+        self._unit_scope = None
+
+    def _ssh_prefix(self):
+        """Return the SSH command prefix for remote hosts, or an empty list."""
+        if self.host == 'local':
+            return []
+        cmd = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5', '-p', str(self.ssh_port)]
+        if self.ssh_key:
+            cmd.extend(['-i', self.ssh_key])
+        target = f'{self.ssh_user}@{self.host}' if self.ssh_user else self.host
+        cmd.append(target)
+        return cmd
+
+    def _systemd_cmd(self, args, scope=None):
+        """Build a ``systemctl`` command, optionally over SSH and/or ``--user``."""
+        cmd = self._ssh_prefix()
+        systemctl = ['systemctl']
+        if scope == 'user':
+            systemctl.append('--user')
+        systemctl.extend(args)
+        return cmd + systemctl
+
+    def _has_unit(self, name, scope):
+        """Return True if ``<name>.service`` is loaded in the given scope."""
+        try:
+            result = subprocess.run(
+                self._systemd_cmd(['show', f'{name}.service', '--property=LoadState', '--value'], scope=scope),
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            return result.stdout.strip() == 'loaded'
+        except subprocess.CalledProcessError:
+            return False
+
+    def _discover_scope(self):
+        """Cache and return the systemd scope ('user' or 'system') for this container, or None."""
+        if self._unit_scope is not None:
+            return self._unit_scope
+        for scope in ('user', 'system'):
+            if self._has_unit(self.name, scope):
+                self._unit_scope = scope
+                logger.debug(f"Container {self.name} is managed by systemd ({scope} bus)")
+                return scope
+        self._unit_scope = None
+        return None
+
+    def ping(self):
+        return self.base.ping()
+
+    def is_running(self, name):
+        scope = self._discover_scope()
+        if scope is None:
+            return self.base.is_running(name)
+        try:
+            result = subprocess.run(
+                self._systemd_cmd(['show', f'{name}.service', '--property=ActiveState', '--value'], scope=scope),
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+            )
+            return result.stdout.strip() == 'active'
+        except subprocess.CalledProcessError:
+            return False
+
+    def stop(self, name):
+        scope = self._discover_scope()
+        if scope is None:
+            return self.base.stop(name)
+        logger.info(f"Stopping systemd-managed container: {name} on {self.host}")
+        try:
+            subprocess.run(
+                self._systemd_cmd(['stop', f'{name}.service'], scope=scope),
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error stopping {name} via systemd: {e}")
+            return False
+
+    def start(self, name):
+        scope = self._discover_scope()
+        if scope is None:
+            return self.base.start(name)
+        logger.info(f"Starting systemd-managed container: {name} on {self.host}")
+        try:
+            subprocess.run(
+                self._systemd_cmd(['start', f'{name}.service'], scope=scope),
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            return True
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Error starting {name} via systemd: {e}")
+            return False
+
+    def inspect(self, name):
+        return self.base.inspect(name)
+
+
 _runtime_cache = {}
+_systemd_runtime_cache = {}
 
 
 def _runtime_key(container):
@@ -254,6 +368,11 @@ def _runtime_key(container):
     ssh_key = container.get('ssh_key') or ''
     ssh_port = container.get('ssh_port', 22)
     return (runtime, host, ssh_user, ssh_key, ssh_port)
+
+
+def _systemd_runtime_key(container):
+    """Return a cache key for the systemd wrapper of a specific container."""
+    return (_runtime_key(container), container['name'])
 
 
 def _make_runtime(container):
@@ -271,24 +390,51 @@ def _make_runtime(container):
 
 
 def get_runtime(container):
-    """Return a cached, pinging ContainerRuntime for the given container config."""
+    """Return a cached, pinging ContainerRuntime for the given container config.
+
+    There are two cache levels:
+
+    1. Base runtime cache (``_runtime_cache``): one shared DockerRuntime or
+       PodmanRuntime per (runtime, host, ssh_user, ssh_key, ssh_port). This avoids
+       rebuilding SSH/Docker clients for every container.
+    2. Systemd wrapper cache (``_systemd_runtime_cache``): one SystemdRuntime per
+       (base key, container name). This caches the discovered systemd scope so we
+       don't run ``systemctl show`` repeatedly for the same container during a single
+       backup/restore run.
+
+    The wrapper detects a matching systemd service unit (e.g. for Podman Quadlets) and
+    delegates stop/start/status to ``systemctl``; otherwise it falls back to the base
+    runtime. The exported container JSON is always produced by the base runtime.
+    """
     key = _runtime_key(container)
     if key in _runtime_cache:
-        runtime = _runtime_cache[key]
+        base_runtime = _runtime_cache[key]
         try:
-            runtime.ping()
+            base_runtime.ping()
         except Exception:
             logger.warning(f"Cached runtime for {key} is stale, reconnecting...")
             del _runtime_cache[key]
+            _systemd_runtime_cache.pop(key, None)
     if key not in _runtime_cache:
         try:
-            runtime = _make_runtime(container)
-            runtime.ping()
-            _runtime_cache[key] = runtime
+            base_runtime = _make_runtime(container)
+            base_runtime.ping()
+            _runtime_cache[key] = base_runtime
         except Exception as e:
             logger.critical(f"Could not create runtime for {key}: {e}")
             return None
-    return _runtime_cache[key]
+
+    sd_key = _systemd_runtime_key(container)
+    if sd_key not in _systemd_runtime_cache:
+        _systemd_runtime_cache[sd_key] = SystemdRuntime(
+            base_runtime,
+            container['name'],
+            host=container.get('host', 'local'),
+            ssh_user=container.get('ssh_user'),
+            ssh_key=container.get('ssh_key'),
+            ssh_port=container.get('ssh_port', 22),
+        )
+    return _systemd_runtime_cache[sd_key]
 
 
 def normalize_group(value):
@@ -911,6 +1057,25 @@ def main():
             logger.info(f"{'- DRY RUN -  ' if args.dry_run else ''}Processing group: {group_name}")
             containers_to_restart = []
             stop_failed = set()
+            prestop_json_attempted = set()
+            prestop_json_failed = set()
+
+            # Step 0: Pre-stop JSON export for running containers that will be restarted.
+            # Systemd-managed (e.g. Quadlet) containers can become invisible to
+            # podman/docker inspect once stopped, so capture the config first.
+            for container in containers:
+                container_id = container["name"]
+                host = container.get("host", "local")
+                runtime = get_runtime(container)
+                if runtime is None:
+                    continue
+                restart_value = container.get("restart", False)
+                should_restart = str(restart_value).lower() == "yes" if isinstance(restart_value, str) else bool(restart_value)
+                if should_restart and is_container_running(container_id, runtime):
+                    prestop_json_attempted.add(container_id)
+                    if not backup_container_json(container_id, backup_root, runtime, host, dry_run=args.dry_run):
+                        prestop_json_failed.add(container_id)
+                        logger.error(f"Pre-stop JSON export failed for {container_id} on {host}")
 
             # Step 1: Stop containers marked for restart
             for container in containers:
@@ -956,9 +1121,14 @@ def main():
                 detail = ''
                 source_path = container.get("appdata_path")
 
-                if not backup_container_json(container_id, backup_root, runtime, host, dry_run=args.dry_run):
+                if container_id in prestop_json_failed:
                     status = 'failed'
                     detail = 'JSON backup failed'
+
+                if container_id not in prestop_json_attempted:
+                    if not backup_container_json(container_id, backup_root, runtime, host, dry_run=args.dry_run):
+                        status = 'failed'
+                        detail = 'JSON backup failed'
 
                 if not source_path:
                     logger.info(f"{'- DRY RUN -  ' if args.dry_run else ''}Skipping data backup for {container_id} (no path).")
