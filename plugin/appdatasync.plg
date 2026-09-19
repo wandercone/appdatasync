@@ -4,7 +4,7 @@
 <PLUGIN
   name="appdatasync"
   author="wandercone"
-  version="2026.08.30"
+  version="2026.09.19"
   launch="Tools/AppdataSync"
   pluginURL="https://raw.githubusercontent.com/wandercone/appdatasync/main/plugin/appdatasync.plg"
   support="https://github.com/wandercone/appdatasync/issues"
@@ -15,6 +15,10 @@
 
 <CHANGES>
 <![CDATA[
+
+### 2026.09.19
+
+feat: address podman quadlet quirks requiring a systemd runtime
 
 ### 2026.08.30
 
@@ -27,18 +31,14 @@
 - chore: update README.md
 - chore: update README to include reference to desertwitch's python-UNRAID plugin
 
-### 2026.07.27_rc10
-
-- chore: ensure cron runs are logged in status
-
 
 For older releases, see https://github.com/wandercone/appdatasync/releases
 ]]>
 </CHANGES>
 
-<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.08.30-noarch-1.txz">
-<URL>https://github.com/wandercone/appdatasync/releases/download/2026.08.30/appdatasync-2026.08.30-noarch-1.txz</URL>
-<SHA256>7992d67ff548fb7cc84f5eff18e14f7e44c300031aabaa84731ba79fa522a4e3</SHA256>
+<FILE Name="/boot/config/plugins/appdatasync/appdatasync-2026.09.19-noarch-1.txz">
+<URL>https://github.com/wandercone/appdatasync/releases/download/2026.09.19/appdatasync-2026.09.19-noarch-1.txz</URL>
+<SHA256>2f8c419e6a362bee2d973b4d338bab3d1db0f8763949f2ae1fbec30a9db2e397</SHA256>
 </FILE>
 
 <FILE Name="/boot/config/plugins/appdatasync/appdatasync.cron">
@@ -54,10 +54,10 @@ The 'install' script.
 <FILE Run="/bin/bash">
 <INLINE>
 <![CDATA[
-upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.08.30-noarch-1.txz
+upgradepkg --install-new /boot/config/plugins/appdatasync/appdatasync-2026.09.19-noarch-1.txz
 
 # cleanup old versions
-rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.08.30')
+rm -f $(ls /boot/config/plugins/appdatasync/appdatasync-*.txz 2>/dev/null | grep -v '2026.09.19')
 
 # ensure plugin config directory exists on /boot so user config survives updates
 mkdir -p /boot/config/plugins/appdatasync
@@ -87,7 +87,7 @@ fi
 echo ""
 echo "----------------------------------------------------"
 echo " appdatasync has been installed."
-echo " Version: 2026.08.30"
+echo " Version: 2026.09.19"
 echo "----------------------------------------------------"
 echo ""
 ]]>
