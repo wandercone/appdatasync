@@ -262,6 +262,7 @@ class SystemdRuntime(ContainerRuntime):
         self.ssh_key = ssh_key
         self.ssh_port = ssh_port
         self._unit_scope = None
+        self._scope_discovered = False
 
     def _ssh_prefix(self):
         """Return the SSH command prefix for remote hosts, or an empty list."""
@@ -293,11 +294,16 @@ class SystemdRuntime(ContainerRuntime):
             return result.stdout.strip() == 'loaded'
         except subprocess.CalledProcessError:
             return False
+        except OSError:
+            # systemctl (or ssh) is not available, e.g. on unRAID. Treat as
+            # "no systemd unit" so lifecycle falls back to the base runtime.
+            return False
 
     def _discover_scope(self):
         """Cache and return the systemd scope ('user' or 'system') for this container, or None."""
-        if self._unit_scope is not None:
+        if self._scope_discovered:
             return self._unit_scope
+        self._scope_discovered = True
         for scope in ('user', 'system'):
             if self._has_unit(self.name, scope):
                 self._unit_scope = scope
@@ -321,6 +327,8 @@ class SystemdRuntime(ContainerRuntime):
             return result.stdout.strip() == 'active'
         except subprocess.CalledProcessError:
             return False
+        except OSError:
+            return self.base.is_running(name)
 
     def stop(self, name):
         scope = self._discover_scope()
@@ -336,6 +344,8 @@ class SystemdRuntime(ContainerRuntime):
         except subprocess.CalledProcessError as e:
             logger.error(f"Error stopping {name} via systemd: {e}")
             return False
+        except OSError:
+            return self.base.stop(name)
 
     def start(self, name):
         scope = self._discover_scope()
@@ -351,6 +361,8 @@ class SystemdRuntime(ContainerRuntime):
         except subprocess.CalledProcessError as e:
             logger.error(f"Error starting {name} via systemd: {e}")
             return False
+        except OSError:
+            return self.base.start(name)
 
     def inspect(self, name):
         return self.base.inspect(name)
@@ -398,13 +410,15 @@ def get_runtime(container):
        PodmanRuntime per (runtime, host, ssh_user, ssh_key, ssh_port). This avoids
        rebuilding SSH/Docker clients for every container.
     2. Systemd wrapper cache (``_systemd_runtime_cache``): one SystemdRuntime per
-       (base key, container name). This caches the discovered systemd scope so we
-       don't run ``systemctl show`` repeatedly for the same container during a single
-       backup/restore run.
+       (base key, container name), Podman only. This caches the discovered systemd
+       scope so we don't run ``systemctl show`` repeatedly for the same container
+       during a single backup/restore run.
 
-    The wrapper detects a matching systemd service unit (e.g. for Podman Quadlets) and
-    delegates stop/start/status to ``systemctl``; otherwise it falls back to the base
-    runtime. The exported container JSON is always produced by the base runtime.
+    For Podman, the wrapper detects a matching systemd service unit (e.g. for Quadlets)
+    and delegates stop/start/status to ``systemctl``; otherwise it falls back to the base
+    runtime. Docker containers are never wrapped, so hosts without systemd (e.g. unRAID)
+    never probe ``systemctl``. The exported container JSON is always produced by the
+    base runtime.
     """
     key = _runtime_key(container)
     if key in _runtime_cache:
@@ -414,7 +428,8 @@ def get_runtime(container):
         except Exception:
             logger.warning(f"Cached runtime for {key} is stale, reconnecting...")
             del _runtime_cache[key]
-            _systemd_runtime_cache.pop(key, None)
+            for sd_key in [k for k in _systemd_runtime_cache if k[0] == key]:
+                del _systemd_runtime_cache[sd_key]
     if key not in _runtime_cache:
         try:
             base_runtime = _make_runtime(container)
@@ -423,6 +438,12 @@ def get_runtime(container):
         except Exception as e:
             logger.critical(f"Could not create runtime for {key}: {e}")
             return None
+
+    if key[0] != 'podman':
+        # Only Podman containers can be Quadlet/systemd-managed. Skipping the
+        # wrapper for Docker also avoids probing systemctl on hosts without
+        # systemd (e.g. unRAID), where the binary does not exist at all.
+        return base_runtime
 
     sd_key = _systemd_runtime_key(container)
     if sd_key not in _systemd_runtime_cache:
