@@ -148,6 +148,24 @@ groups:
       restart: yes
 ```
 
+### Exclusive-access shares: use a direct path
+
+rsync 3.5.0 and later only follow symlinks in the source or destination path
+when they are owned by root. Unraid exposes a share that uses exclusive access
+on a single pool as a symlink under `/mnt/user` (for example,
+`/mnt/user/backups -> ../cache/backups`), owned by `nobody:users`, so a backup
+destination beneath it is refused.
+
+If `backup_destination` points into such a share, configure the direct pool path instead:
+
+```yaml
+# instead of: /mnt/user/backups/
+backup_destination: /mnt/cache/backups/
+```
+
+The direct path addresses the same data and lets rsync open it without crossing
+the `/mnt/user` symlink.
+
 **Note on rootless Podman:** rootless Podman containers are visible only to the user
 that owns them. Make sure the `ssh_user` on the remote host (or the local user running
 the plugin) matches the Podman user, otherwise the container list and stop/start
